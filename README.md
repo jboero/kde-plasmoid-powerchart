@@ -6,8 +6,10 @@ By John Boero and Claude Opus v4.6
 
 Vibe coded - WARNING use at your own risk.
 
+<img width="566" height="556" alt="image" src="https://github.com/user-attachments/assets/4b3b0d0f-962b-469e-9c5f-bb7b4bee3c33" />
+
 ![Plasma 6.0+](https://img.shields.io/badge/Plasma-6.0%2B-blue)
-![License: MPL-2.0](https://img.shields.io/badge/License-MPL--2.0-brightgreen)
+![License: GPLv3](https://img.shields.io/badge/License-GPL--3-brightgreen)
 ![QML](https://img.shields.io/badge/Built%20with-QML-orange)
 
 ## Overview
