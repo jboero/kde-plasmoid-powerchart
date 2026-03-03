@@ -1,9 +1,10 @@
 {
     "KPlugin": {
-        "Id": "org.kde.plasma.batterymonitor-custom",
+        "Id": "org.kde.plasma.batterymonitor-boero",
         "Name": "Battery & Power Graph",
         "Description": "Real-time battery level and power consumption graphing widget with historical data",
         "Icon": "battery-full",
+        "EnabledByDefault": true,
         "Authors": [
             {
                 "Name": "Johnny",
@@ -11,12 +12,14 @@
             }
         ],
         "Category": "System Information",
-        "License": "GPL-3.0",
-        "Version": "1.0.0",
-        "Website": ""
+        "License": "MPL-2.0",
+        "Version": "1.2.2"
     },
-    "X-Plasma-API": "declarativeappletscript",
-    "X-Plasma-MainScript": "ui/main.qml",
-    "X-Plasma-Provides": ["org.kde.plasma.battery"],
-    "KPackageStructure": "Plasma/Applet"
+    "KPackageStructure": "Plasma/Applet",
+    "X-Plasma-API-Minimum-Version": "6.0",
+    "X-Plasma-NotificationArea": "true",
+    "X-Plasma-NotificationAreaCategory": "Hardware",
+    "X-Plasma-Provides": [
+        "org.kde.plasma.battery"
+    ]
 }
