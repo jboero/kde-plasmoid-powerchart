@@ -2,6 +2,10 @@
 
 A real-time battery level and power consumption graphing widget for the KDE Plasma 6 desktop, with a cyberpunk-inspired dark UI.
 
+WARNING this is vibe coded in Claude Opus v4.6 - USE AT YOUR OWN RISK
+
+![sample](https://github.com/user-attachments/assets/6e768300-e7ba-416f-b4d8-c1199a0cf9fc)
+
 ## Features
 
 - **Dual graph modes**: Toggle between Battery % and Power (Watts) over time
