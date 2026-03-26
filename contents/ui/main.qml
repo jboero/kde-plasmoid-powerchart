@@ -15,6 +15,8 @@ PlasmoidItem {
     readonly property int refreshMs: plasmoid.configuration.refreshInterval * 1000
     readonly property int maxDataPoints: Math.max(10,
         Math.floor(plasmoid.configuration.historyMinutes * 60 / plasmoid.configuration.refreshInterval))
+    // Battery% & temp: 10× retention window, sampled 1/10 as often → same array length
+    readonly property int maxDataPointsLong: maxDataPoints
     readonly property int graphHeight: 180
     readonly property int graphWidth: 360
 
@@ -38,6 +40,7 @@ PlasmoidItem {
                                                       Kirigami.Theme.backgroundColor.b, 0.3)
 
     // ── Data state ───────────────────────────────────────────────────
+    property int pollCounter: 0   // counts poll cycles; battery% & temp sample every 10th
     property var batteryHistory: []
     property var powerHistory: []
     property var tempHistory: []
@@ -55,10 +58,16 @@ PlasmoidItem {
     property real fullCapacity: 0
     property real batteryHealth: 0
     property int cycleCount: -1
-    property int viewMode: 0            // 0 = battery%, 1 = power, 2 = temp
+    property int viewMode: 1            // 0 = battery%, 1 = power, 2 = temp
     property string currentProfile: ""   // power-profiles-daemon active profile
     property var availableProfiles: []   // list of available profiles
     property bool ppdAvailable: false    // whether net.hadess.PowerProfiles D-Bus service is present
+    property string tunedProfile: ""      // TuneD active profile
+    property var tunedProfiles: []        // list of {name, desc} objects
+    property var tunedProfileNames: []    // just names for setTunedProfile
+    property var tunedDisplayNames: []    // "name - description" for combobox display
+    property bool tunedAvailable: false   // whether tuned-adm is present
+    property bool tunedSwitching: false   // true while user-initiated switch is in flight
     // Bump this to signal the graph to repaint (avoids cross-scope id refs)
     property int dataVersion: 0
 
@@ -121,28 +130,60 @@ PlasmoidItem {
                     root.ppdAvailable = false;
                 }
 
+                // TuneD profiles
+                var tp = parsed.tuned_profile || "";
+                // Clear user-switching lock once the daemon confirms the new profile
+                if (tp !== "" && tp !== root.tunedProfile && root.tunedSwitching) {
+                    root.tunedSwitching = false;
+                }
+                root.tunedProfile = tp;
+                var ta = parsed.tuned_available || "";
+                if (ta !== "") {
+                    var entries = ta.split("|").filter(function(s) { return s.trim() !== ""; });
+                    var names = [];
+                    var display = [];
+                    for (var ti = 0; ti < entries.length; ti++) {
+                        var parts = entries[ti].split(/ {2,}- /);  // split on "  - " (2+ spaces then dash)
+                        var pname = parts[0].trim();
+                        var pdesc = parts.length > 1 ? parts[1].trim() : "";
+                        names.push(pname);
+                        display.push(pdesc ? pname + " — " + pdesc : pname);
+                    }
+                    root.tunedProfileNames = names;
+                    root.tunedDisplayNames = display;
+                    root.tunedAvailable = true;
+                } else {
+                    root.tunedProfileNames = [];
+                    root.tunedDisplayNames = [];
+                    root.tunedAvailable = (tp !== "");
+                }
+
                 if (root.designCapacity > 0 && root.fullCapacity > 0) {
                     root.batteryHealth = (root.fullCapacity / root.designCapacity) * 100;
                 }
 
-                if (root.currentBattery >= 0) {
-                    var bh = root.batteryHistory.slice();
-                    bh.push(root.currentBattery);
-                    if (bh.length > root.maxDataPoints) bh.shift();
-                    root.batteryHistory = bh;
-                }
-
+                // Power history: every poll cycle
                 var ph = root.powerHistory.slice();
                 ph.push(root.currentPower);
                 if (ph.length > root.maxDataPoints) ph.shift();
                 root.powerHistory = ph;
 
-                // Temperature history
-                if (root.currentTemp >= 0) {
-                    var th = root.tempHistory.slice();
-                    th.push(root.currentTemp);
-                    if (th.length > root.maxDataPoints) th.shift();
-                    root.tempHistory = th;
+                // Battery% & temp: sample every 10th poll for 10× longer retention
+                root.pollCounter++;
+                if (root.pollCounter % 10 === 0) {
+                    if (root.currentBattery >= 0) {
+                        var bh = root.batteryHistory.slice();
+                        bh.push(root.currentBattery);
+                        if (bh.length > root.maxDataPointsLong) bh.shift();
+                        root.batteryHistory = bh;
+                    }
+
+                    if (root.currentTemp >= 0) {
+                        var th = root.tempHistory.slice();
+                        th.push(root.currentTemp);
+                        if (th.length > root.maxDataPointsLong) th.shift();
+                        root.tempHistory = th;
+                    }
                 }
 
                 if (root.currentPower > root.maxPowerSeen) {
@@ -179,7 +220,30 @@ PlasmoidItem {
     }
 
     function setProfile(profileName) {
-        profileSetter.connectSource("powerprofilesctl set " + profileName);
+        // Use powerprofilesctl if available, otherwise gdbus
+        profileSetter.connectSource(
+            "if command -v powerprofilesctl >/dev/null 2>&1; then " +
+            "powerprofilesctl set " + profileName + "; else " +
+            "gdbus call --system --dest net.hadess.PowerProfiles " +
+            "--object-path /net/hadess/PowerProfiles " +
+            "--method org.freedesktop.DBus.Properties.Set net.hadess.PowerProfiles ActiveProfile " +
+            "\"<string '" + profileName + "'>\"" +
+            "; fi");
+    }
+
+    // ── TuneD profile setter (requires root via pkexec) ──────────────
+    Plasma5Support.DataSource {
+        id: tunedSetter
+        engine: "executable"
+        connectedSources: []
+        onNewData: (sourceName, data) => {
+            tunedSetter.disconnectSource(sourceName);
+            root.execCommand();
+        }
+    }
+
+    function setTunedProfile(profileName) {
+        tunedSetter.connectSource("tuned-adm profile " + profileName);
     }
 
     // ── Timer ────────────────────────────────────────────────────────
@@ -218,14 +282,13 @@ PlasmoidItem {
                 ctx.clearRect(0, 0, w, h);
 
                 var pct = Math.max(0, Math.min(100, root.currentBattery));
-                var lw = Math.max(1.5, Math.round(w * 0.07));
+                var lw = Math.max(1, Math.round(Math.min(w, h) * 0.04));
 
-                // ── Vertical battery body ──
-                // Terminal nub on top
-                var nubW = w * 0.3;
-                var nubH = Math.max(2, h * 0.06);
-                var nubX = (w - nubW) / 2;
-                var nubY = h * 0.04;
+                // ── Horizontal battery body (nub on right) ──
+                var nubW = Math.max(2, w * 0.06);
+                var nubH = h * 0.3;
+                var nubX = w * 0.88;
+                var nubY = (h - nubH) / 2;
 
                 ctx.beginPath();
                 ctx.roundedRect(nubX, nubY, nubW, nubH, 1, 1);
@@ -233,11 +296,11 @@ PlasmoidItem {
                 ctx.fill();
 
                 // Main body
-                var bodyX = w * 0.15;
-                var bodyY = nubY + nubH;
-                var bodyW = w * 0.7;
-                var bodyH = h * 0.82;
-                var r = Math.max(2, bodyW * 0.15);
+                var bodyX = w * 0.06;
+                var bodyY = h * 0.15;
+                var bodyW = w * 0.82;
+                var bodyH = h * 0.7;
+                var r = Math.max(2, bodyH * 0.15);
 
                 ctx.beginPath();
                 ctx.roundedRect(bodyX, bodyY, bodyW, bodyH, r, r);
@@ -245,17 +308,16 @@ PlasmoidItem {
                 ctx.lineWidth = lw;
                 ctx.stroke();
 
-                // ── Fill level (grows upward from bottom) ──
+                // ── Fill level (grows left to right) ──
                 if (root.currentBattery >= 0) {
                     var inset = lw + 1;
                     var fillX = bodyX + inset;
-                    var fillMaxH = bodyH - inset * 2;
-                    var fillW = bodyW - inset * 2;
-                    var fillH = fillMaxH * (pct / 100);
-                    var fillY = bodyY + inset + (fillMaxH - fillH);
+                    var fillY = bodyY + inset;
+                    var fillMaxW = bodyW - inset * 2;
+                    var fillH = bodyH - inset * 2;
+                    var fillW = fillMaxW * (pct / 100);
                     var fillR = Math.max(1, r * 0.5);
 
-                    // Choose fill color
                     var fillColor;
                     if (root.isCharging) {
                         fillColor = root.colorCharging;
@@ -267,9 +329,9 @@ PlasmoidItem {
                         fillColor = root.colorBattery;
                     }
 
-                    if (fillH > 0) {
+                    if (fillW > 0) {
                         ctx.beginPath();
-                        ctx.roundedRect(fillX, fillY, fillW, Math.max(fillR * 2, fillH), fillR, fillR);
+                        ctx.roundedRect(fillX, fillY, Math.max(fillR * 2, fillW), fillH, fillR, fillR);
                         ctx.fillStyle = fillColor.toString();
                         ctx.fill();
                     }
@@ -277,9 +339,9 @@ PlasmoidItem {
 
                 // ── Charging: lightning bolt ──
                 if (root.isCharging) {
-                    var cx = w * 0.5;
-                    var cy = bodyY + bodyH * 0.45;
-                    var bh = bodyH * 0.45;
+                    var cx = bodyX + bodyW * 0.5;
+                    var cy = h * 0.5;
+                    var bh = bodyH * 0.5;
                     var bw = bh * 0.4;
 
                     ctx.beginPath();
@@ -298,11 +360,10 @@ PlasmoidItem {
                 }
                 // ── Plugged in (not charging): plug icon ──
                 else if (root.acPlugged) {
-                    var px = w * 0.5;
-                    var py = bodyY + bodyH * 0.45;
+                    var px = bodyX + bodyW * 0.5;
+                    var py = h * 0.5;
                     var ps = Math.max(3, bodyH * 0.12);
 
-                    // Plug body
                     ctx.beginPath();
                     ctx.roundedRect(px - ps, py - ps * 0.6, ps * 2, ps * 1.2, 1, 1);
                     ctx.fillStyle = Kirigami.Theme.backgroundColor.toString();
@@ -311,7 +372,6 @@ PlasmoidItem {
                     ctx.lineWidth = Math.max(0.8, w * 0.04);
                     ctx.stroke();
 
-                    // Two prongs
                     var prongW = Math.max(1, ps * 0.25);
                     ctx.fillStyle = Kirigami.Theme.textColor.toString();
                     ctx.fillRect(px - ps * 0.45, py - ps * 0.6 - ps * 0.5, prongW, ps * 0.5);
@@ -412,14 +472,14 @@ PlasmoidItem {
         PlasmaComponents.TabBar {
             Layout.fillWidth: true
             PlasmaComponents.TabButton {
-                text: "Battery %"
-                checked: root.viewMode === 0
-                onClicked: { root.viewMode = 0; graphCanvas.requestPaint(); }
-            }
-            PlasmaComponents.TabButton {
                 text: "Power (W)"
                 checked: root.viewMode === 1
                 onClicked: { root.viewMode = 1; graphCanvas.requestPaint(); }
+            }
+            PlasmaComponents.TabButton {
+                text: "Battery %"
+                checked: root.viewMode === 0
+                onClicked: { root.viewMode = 0; graphCanvas.requestPaint(); }
             }
             PlasmaComponents.TabButton {
                 text: "Temp (°C)"
@@ -493,15 +553,19 @@ PlasmoidItem {
                              : root.viewMode === 1 ? root.powerHistory
                              : root.tempHistory;
                     var numPoints = data.length;
-                    var intervalSec = plasmoid.configuration.refreshInterval;
+                    // Battery% & temp are sampled 10× less often
+                    var intervalSec = root.viewMode === 1
+                        ? plasmoid.configuration.refreshInterval
+                        : plasmoid.configuration.refreshInterval * 10;
 
+                    var maxPts = root.viewMode === 1 ? root.maxDataPoints : root.maxDataPointsLong;
                     if (numPoints > 1) {
                         var labels = [0, Math.floor(numPoints * 0.25), Math.floor(numPoints * 0.5),
                                       Math.floor(numPoints * 0.75), numPoints - 1];
                         for (var li = 0; li < labels.length; li++) {
                             var idx = labels[li];
                             if (idx < numPoints) {
-                                x = pad.left + (idx / (root.maxDataPoints - 1)) * gw;
+                                x = pad.left + (idx / (maxPts - 1)) * gw;
                                 var secsAgo = (numPoints - 1 - idx) * intervalSec;
                                 var label;
                                 if (secsAgo === 0) label = "now";
@@ -540,12 +604,12 @@ PlasmoidItem {
                     // Area
                     ctx.beginPath();
                     for (i = 0; i < numPoints; i++) {
-                        x = pad.left + (i / (root.maxDataPoints - 1)) * gw;
+                        x = pad.left + (i / (maxPts - 1)) * gw;
                         val = Math.max(minVal, Math.min(maxVal, data[i]));
                         y = pad.top + gh - ((val - minVal) / (maxVal - minVal)) * gh;
                         if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
                     }
-                    var lastX = pad.left + ((numPoints - 1) / (root.maxDataPoints - 1)) * gw;
+                    var lastX = pad.left + ((numPoints - 1) / (maxPts - 1)) * gw;
                     ctx.lineTo(lastX, pad.top + gh);
                     ctx.lineTo(pad.left, pad.top + gh);
                     ctx.closePath();
@@ -555,7 +619,7 @@ PlasmoidItem {
                     // Line
                     ctx.beginPath();
                     for (i = 0; i < numPoints; i++) {
-                        x = pad.left + (i / (root.maxDataPoints - 1)) * gw;
+                        x = pad.left + (i / (maxPts - 1)) * gw;
                         val = Math.max(minVal, Math.min(maxVal, data[i]));
                         y = pad.top + gh - ((val - minVal) / (maxVal - minVal)) * gh;
                         if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
@@ -567,7 +631,7 @@ PlasmoidItem {
                     // Dot
                     if (numPoints > 0) {
                         var lastVal = data[numPoints - 1];
-                        var dotX = pad.left + ((numPoints - 1) / (root.maxDataPoints - 1)) * gw;
+                        var dotX = pad.left + ((numPoints - 1) / (maxPts - 1)) * gw;
                         var dotY = pad.top + gh - ((Math.max(minVal, Math.min(maxVal, lastVal)) - minVal) / (maxVal - minVal)) * gh;
 
                         ctx.beginPath();
@@ -609,6 +673,42 @@ PlasmoidItem {
                     checked: root.currentProfile === modelData
                     font: Kirigami.Theme.smallFont
                     onClicked: root.setProfile(modelData)
+                }
+            }
+        }
+
+        // ── TuneD Profile Switcher ─────────────────────────────────────
+        RowLayout {
+            Layout.fillWidth: true
+            visible: root.tunedAvailable && fullRep.showStats
+            spacing: Kirigami.Units.smallSpacing
+
+            PlasmaComponents.Label {
+                text: "TuneD:"
+                font: Kirigami.Theme.smallFont
+                color: root.colorText
+            }
+
+            PlasmaComponents.ComboBox {
+                id: tunedCombo
+                Layout.fillWidth: true
+                model: root.tunedDisplayNames
+                font: Kirigami.Theme.smallFont
+
+                // Only sync from poll when user isn't mid-switch
+                Connections {
+                    target: root
+                    function onTunedProfileChanged() {
+                        if (!root.tunedSwitching) {
+                            tunedCombo.currentIndex = root.tunedProfileNames.indexOf(root.tunedProfile);
+                        }
+                    }
+                }
+                onModelChanged: currentIndex = root.tunedProfileNames.indexOf(root.tunedProfile)
+
+                onActivated: (index) => {
+                    root.tunedSwitching = true;
+                    root.setTunedProfile(root.tunedProfileNames[index]);
                 }
             }
         }
@@ -695,9 +795,6 @@ PlasmoidItem {
 
     function updateStatsModel() {
         statsModel.clear();
-        statsModel.append({ label: "Current Draw",
-            value: root.currentPower.toFixed(2) + " W",
-            accent: root.colorPower.toString() });
         statsModel.append({ label: "Battery",
             value: root.currentBattery >= 0 ? Math.round(root.currentBattery) + "%" : "N/A",
             accent: root.batteryColor(root.currentBattery).toString() });
@@ -707,18 +804,9 @@ PlasmoidItem {
         statsModel.append({ label: "Temperature",
             value: root.currentTemp >= 0 ? root.currentTemp.toFixed(1) + " °C" : "N/A",
             accent: root.currentTemp >= 0 ? root.tempColor(root.currentTemp).toString() : "" });
-        statsModel.append({ label: "Profile",
-            value: root.ppdAvailable ? root.currentProfile : "N/A",
-            accent: root.currentProfile === "performance" ? root.colorBatteryLow.toString() :
-                    root.currentProfile === "power-saver" ? root.colorBattery.toString() : "" });
         statsModel.append({ label: "Cycle Count",
             value: root.cycleCount >= 0 ? root.cycleCount.toString() : "N/A",
             accent: "" });
-        statsModel.append({ label: "Health",
-            value: root.batteryHealth > 0 ? root.batteryHealth.toFixed(1) + "%" : "N/A",
-            accent: root.batteryHealth > 80 ? root.colorBattery.toString() :
-                    root.batteryHealth > 50 ? root.colorBatteryMid.toString() :
-                    root.batteryHealth > 0 ? root.colorBatteryLow.toString() : "" });
     }
 
     // ── Helpers ──────────────────────────────────────────────────────

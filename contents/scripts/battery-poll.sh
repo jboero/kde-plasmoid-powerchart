@@ -65,10 +65,18 @@ PPD_PROFILE=""; PPD_AVAIL=""
 if command -v powerprofilesctl >/dev/null 2>&1; then
     PPD_PROFILE=$(powerprofilesctl get 2>/dev/null)
     PPD_AVAIL=$(powerprofilesctl list 2>/dev/null | grep -oE '^\*?\s*(performance|balanced|power-saver):' | sed 's/[* :]//g' | tr '\n' ',' | sed 's/,$//')
+    [ -z "$PPD_AVAIL" ] && [ -n "$PPD_PROFILE" ] && PPD_AVAIL="power-saver,balanced,performance"
 elif command -v gdbus >/dev/null 2>&1; then
     PPD_PROFILE=$(gdbus call --system --dest net.hadess.PowerProfiles --object-path /net/hadess/PowerProfiles --method org.freedesktop.DBus.Properties.Get net.hadess.PowerProfiles ActiveProfile 2>/dev/null | grep -oE '(performance|balanced|power-saver)')
     PPD_AVAIL=$(gdbus call --system --dest net.hadess.PowerProfiles --object-path /net/hadess/PowerProfiles --method org.freedesktop.DBus.Properties.Get net.hadess.PowerProfiles Profiles 2>/dev/null | grep -oE '(performance|balanced|power-saver)' | sort -u | tr '\n' ',' | sed 's/,$//')
+    [ -z "$PPD_AVAIL" ] && [ -n "$PPD_PROFILE" ] && PPD_AVAIL="power-saver,balanced,performance"
 fi
-[ -z "$PPD_AVAIL" ] && [ -n "$PPD_PROFILE" ] && PPD_AVAIL="power-saver,balanced,performance"
 
-echo "{\"battery_pct\": $PCT, \"power_watts\": $WATTS, \"charging\": $CHARGING, \"ac_online\": $AC_ON, \"status\": \"$STATUS\", \"time_to_empty\": \"$TTE\", \"time_to_full\": \"$TTF\", \"design_capacity\": $DCAP, \"full_capacity\": $FCAP, \"cycle_count\": $CYCLES, \"temp_celsius\": $TEMP, \"power_profile\": \"$PPD_PROFILE\", \"profiles_available\": \"$PPD_AVAIL\"}"
+# TuneD profiles (tuned-adm) — use | separator since descriptions contain commas
+TUNED_PROFILE=""; TUNED_AVAIL=""
+if command -v tuned-adm >/dev/null 2>&1; then
+    TUNED_PROFILE=$(tuned-adm active 2>/dev/null | grep -oP 'Current active profile: \K.*' || true)
+    TUNED_AVAIL=$(tuned-adm list 2>/dev/null | grep '^- ' | sed 's/^- //' | tr '\n' '|' | sed 's/|$//' || true)
+fi
+
+echo "{\"battery_pct\": $PCT, \"power_watts\": $WATTS, \"charging\": $CHARGING, \"ac_online\": $AC_ON, \"status\": \"$STATUS\", \"time_to_empty\": \"$TTE\", \"time_to_full\": \"$TTF\", \"design_capacity\": $DCAP, \"full_capacity\": $FCAP, \"cycle_count\": $CYCLES, \"temp_celsius\": $TEMP, \"power_profile\": \"$PPD_PROFILE\", \"profiles_available\": \"$PPD_AVAIL\", \"tuned_profile\": \"$TUNED_PROFILE\", \"tuned_available\": \"$TUNED_AVAIL\"}"
