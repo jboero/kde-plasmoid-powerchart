@@ -16,6 +16,15 @@ Battery & Power Graph fills a gap in the default Plasma desktop: there's no buil
 
 It reads directly from the Linux kernel's `sysfs` interface — no external daemons, no `upower` dependency, no polling services. Just raw data from `/sys/class/power_supply/`.
 
+An emoji font pack is requried to see buttons as in the screenshots:
+```
+sudo dnf install google-noto-color-emoji-fonts
+```
+or
+```
+sudo apt install fonts-noto-color-emoji
+```
+
 ## Features
 
 - **Triple graph modes** — Battery %, Power (Watts), and Temperature (°C)
