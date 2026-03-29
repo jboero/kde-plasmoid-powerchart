@@ -15,6 +15,7 @@ Vibe coded - WARNING use at your own risk.
 Battery & Power Graph fills a gap in the default Plasma desktop: there's no built-in way to graph your battery percentage, power draw, or battery temperature over time. This widget gives you rolling history graphs with a theme-aware UI that adapts to your Plasma color scheme.
 
 It reads directly from the Linux kernel's `sysfs` interface — no external daemons, no `upower` dependency, no polling services. Just raw data from `/sys/class/power_supply/`.
+<<<<<<< HEAD
 
 An emoji font pack is requried to see buttons as in the screenshots:
 ```
@@ -24,6 +25,8 @@ or
 ```
 sudo apt install fonts-noto-color-emoji
 ```
+=======
+>>>>>>> aaebcee (docs: Add comprehensive bilingual comments and enhance code documentation)
 
 ## Features
 
