@@ -1,6 +1,5 @@
 # Changelog
 
-<<<<<<< HEAD
 =======
 ## 1.3.0 (2026-03-29)
 
@@ -35,7 +34,7 @@
 
 ---
 
->>>>>>> aaebcee (docs: Add comprehensive bilingual comments and enhance code documentation)
+
 ## 1.2.2 (2026-03-03)
 
 - Responsive layout: stats grid and health bar auto-hide when widget is shrunk
