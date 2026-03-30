@@ -297,9 +297,9 @@ PlasmoidItem {
 
                 // Main body / 电池主体
                 var bodyX = w * 0.06;                    // Body X position: 6% from left / 主体 X 位置：距左侧 6%
-                var bodyY = h * 0.20;                    // Body Y position: 20% from top for vertical centering / 主体 Y 位置：距顶部 20% 以垂直居中
+                var bodyY = h * 0.25;                    // Body Y position: 20% from top for vertical centering / 主体 Y 位置：距顶部 20% 以垂直居中
                 var bodyW = w * 0.82;                    // Body width: 82% of canvas width / 主体宽度：画布宽度的 82%
-                var bodyH = h * 0.6;                     // Body height: 60% of canvas height (adjusted for better proportion) / 主体高度：画布高度的 60%（调整以获得更好的比例）
+                var bodyH = h * 0.5;                     // Body height: 60% of canvas height (adjusted for better proportion) / 主体高度：画布高度的 60%（调整以获得更好的比例）
                 var r = Math.max(2, bodyH * 0.15);       // Corner radius: 15% of body height, minimum 2px / 圆角半径：主体高度的 15%，最小 2 像素
 
                 ctx.beginPath();
