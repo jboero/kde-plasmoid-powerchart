@@ -25,6 +25,7 @@ Kirigami.FormLayout {
     property alias cfg_refreshInterval: refreshSpinBox.value     // Refresh interval in seconds / 刷新间隔（秒）
     property alias cfg_historyMinutes: historySpinBox.value      // History duration in minutes / 历史时长（分钟）
     property alias cfg_showPowerProfile: powerProfileCheck.checked  // Show/hide power profile controls / 显示/隐藏电源配置文件控件
+    property alias cfg_showBatteryPercentage: batteryPercentageCheck.checked  // Show/hide battery percentage text / 显示/隐藏电池百分比文本
 
     // SpinBox for numeric input with increment/decrement buttons
     // 带增减按钮的数值输入 SpinBox
@@ -52,6 +53,14 @@ Kirigami.FormLayout {
         id: powerProfileCheck
         Kirigami.FormData.label: i18n("Power profile controls:")  // Label for the checkbox / 复选框的标签
         text: i18n("Show power profile switcher in widget")       // Checkbox text / 复选框文本
+    }
+
+    // CheckBox to toggle battery percentage display in compact representation
+    // 用于切换紧凑模式下电池百分比显示的复选框
+    QQC2.CheckBox {
+        id: batteryPercentageCheck
+        Kirigami.FormData.label: i18n("Battery percentage:")  // Label for the checkbox / 复选框的标签
+        text: i18n("Show battery percentage next to icon")    // Checkbox text / 复选框文本
     }
 
     // Informational note with multi-line text and reduced opacity

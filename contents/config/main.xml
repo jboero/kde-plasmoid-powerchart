@@ -14,5 +14,8 @@
         <entry name="showPowerProfile" type="Bool">
             <default>true</default>
         </entry>
+        <entry name="showBatteryPercentage" type="Bool">
+            <default>true</default>
+        </entry>
     </group>
 </kcfg>
