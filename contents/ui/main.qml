@@ -19,6 +19,7 @@ PlasmoidItem {
     readonly property int maxDataPointsLong: maxDataPoints
     readonly property int graphHeight: 180
     readonly property int graphWidth: 360
+    readonly property bool showBatteryPercentage: plasmoid.configuration.showBatteryPercentage  // Show/hide battery percentage in compact mode / 紧凑模式下显示/隐藏电池百分比
 
     // ── Semantic colors ──────────────────────────────────────────────
     readonly property color colorBattery:    Kirigami.Theme.positiveTextColor
@@ -259,124 +260,121 @@ PlasmoidItem {
     // ── Compact representation (vertical battery icon for systray) ──
     compactRepresentation: Item {
         id: compactRoot
-        Layout.minimumWidth: Kirigami.Units.iconSizes.medium
+        Layout.minimumWidth: Kirigami.Units.iconSizes.medium + 20
         Layout.minimumHeight: Kirigami.Units.iconSizes.medium
         Layout.preferredWidth: Layout.minimumWidth
         Layout.preferredHeight: Layout.minimumHeight
 
-        Canvas {
-            id: batteryIcon
+        RowLayout {
             anchors.fill: parent
+            spacing: 2
 
-            property real pct: root.currentBattery
-            property bool charging: root.isCharging
-            property bool plugged: root.acPlugged
-            onPctChanged: requestPaint()
-            onChargingChanged: requestPaint()
-            onPluggedChanged: requestPaint()
+            // Battery icon canvas / 电池图标画布
+            Canvas {
+                id: batteryIcon
+                Layout.preferredWidth: height
+                Layout.preferredHeight: parent.height
 
-            onPaint: {
-                var ctx = getContext("2d");
-                var w = width;
-                var h = height;
-                ctx.clearRect(0, 0, w, h);
+                property real pct: root.currentBattery
+                property bool charging: root.isCharging
+                property bool plugged: root.acPlugged
+                onPctChanged: requestPaint()
+                onChargingChanged: requestPaint()
+                onPluggedChanged: requestPaint()
 
-                var pct = Math.max(0, Math.min(100, root.currentBattery));
-                var lw = Math.max(1, Math.round(Math.min(w, h) * 0.04));
+                onPaint: {
+                    var ctx = getContext("2d");
+                    var w = width;
+                    var h = height;
+                    ctx.clearRect(0, 0, w, h);
 
-                // ── Horizontal battery body (nub on right) ──
-                var nubW = Math.max(2, w * 0.06);
-                var nubH = h * 0.3;
-                var nubX = w * 0.88;
-                var nubY = (h - nubH) / 2;
+                    var pct = Math.max(0, Math.min(100, root.currentBattery));
+                    var lw = Math.max(1, Math.round(Math.min(w, h) * 0.04));
 
-                ctx.beginPath();
-                ctx.roundedRect(nubX, nubY, nubW, nubH, 1, 1);
-                ctx.fillStyle = Kirigami.Theme.textColor.toString();
-                ctx.fill();
+                    // ── Horizontal battery body (nub on right) ──
+                    var nubW = Math.max(2, w * 0.06);
+                    var nubH = h * 0.3;
+                    var nubX = w * 0.88;
+                    var nubY = (h - nubH) / 2;
 
-                // Main body
-                var bodyX = w * 0.06;
-                var bodyY = h * 0.15;
-                var bodyW = w * 0.82;
-                var bodyH = h * 0.7;
-                var r = Math.max(2, bodyH * 0.15);
+                    ctx.beginPath();
+                    ctx.roundedRect(nubX, nubY, nubW, nubH, 1, 1);
+                    ctx.fillStyle = Kirigami.Theme.textColor.toString();
+                    ctx.fill();
 
-                ctx.beginPath();
-                ctx.roundedRect(bodyX, bodyY, bodyW, bodyH, r, r);
-                ctx.strokeStyle = Kirigami.Theme.textColor.toString();
-                ctx.lineWidth = lw;
-                ctx.stroke();
+                    // Main body / 电池主体
+                    var bodyX = w * 0.06;                    // Body X position: 6% from left / 主体 X 位置：距左侧 6%
+                    var bodyY = h * 0.25;                    // Body Y position: 20% from top for vertical centering / 主体 Y 位置：距顶部 20% 以垂直居中
+                    var bodyW = w * 0.82;                    // Body width: 82% of canvas width / 主体宽度：画布宽度的 82%
+                    var bodyH = h * 0.5;                     // Body height: 60% of canvas height (adjusted for better proportion) / 主体高度：画布高度的 60%（调整以获得更好的比例）
+                    var r = Math.max(2, bodyH * 0.15);       // Corner radius: 15% of body height, minimum 2px / 圆角半径：主体高度的 15%，最小 2 像素
 
-                // ── Fill level (grows left to right) ──
-                if (root.currentBattery >= 0) {
-                    var inset = lw + 1;
-                    var fillX = bodyX + inset;
-                    var fillY = bodyY + inset;
-                    var fillMaxW = bodyW - inset * 2;
-                    var fillH = bodyH - inset * 2;
-                    var fillW = fillMaxW * (pct / 100);
-                    var fillR = Math.max(1, r * 0.5);
-
+                    // Determine border color (always white/text color) / 确定边框颜色（始终为白色/文本颜色）
+                    var borderColor = Kirigami.Theme.textColor.toString();
+                    
+                    // Determine fill color based on battery level and charging state / 根据电量和充电状态确定填充颜色
                     var fillColor;
-                    if (root.isCharging) {
+                    
+                    if (root.isCharging || root.acPlugged) {
+                        // Charging or plugged in: green fill / 充电或接通电源：绿色填充
                         fillColor = root.colorCharging;
                     } else if (pct <= 20) {
+                        // Below 20%: red fill / 20% 以下：红色填充
                         fillColor = root.colorBatteryLow;
-                    } else if (pct <= 40) {
+                    } else if (pct <= 30) {
+                        // Between 20% and 30%: orange fill / 20% 到 30% 之间：橙色填充
                         fillColor = root.colorBatteryMid;
                     } else {
-                        fillColor = root.colorBattery;
+                        // Above 30%: normal/bright color / 30% 以上：正常/亮色填充
+                        fillColor = Kirigami.Theme.textColor;
                     }
 
-                    if (fillW > 0) {
-                        ctx.beginPath();
-                        ctx.roundedRect(fillX, fillY, Math.max(fillR * 2, fillW), fillH, fillR, fillR);
-                        ctx.fillStyle = fillColor.toString();
-                        ctx.fill();
+                    // Draw battery border / 绘制电池边框
+                    ctx.beginPath();
+                    ctx.roundedRect(bodyX, bodyY, bodyW, bodyH, r, r);
+                    ctx.strokeStyle = borderColor;
+                    ctx.lineWidth = lw;
+                    ctx.stroke();
+
+                    // ── Fill level (grows left to right) ──
+                    if (root.currentBattery >= 0) {
+                        var inset = lw + 1;
+                        var fillX = bodyX + inset;
+                        var fillY = bodyY + inset;
+                        var fillMaxW = bodyW - inset * 2;
+                        var fillH = bodyH - inset * 2;
+                        var fillW = fillMaxW * (pct / 100);
+                        var fillR = Math.max(1, r * 0.5);
+
+                        if (fillW > 0) {
+                            ctx.beginPath();
+                            ctx.roundedRect(fillX, fillY, Math.max(fillR * 2, fillW), fillH, fillR, fillR);
+                            ctx.fillStyle = fillColor.toString();
+                            ctx.fill();
+                        }
                     }
+
+                    // ── Charging/Plugged: hide icons (no lightning bolt or plug icon) ──
+                    // 充电/接通电源：隐藏图标（不显示闪电或插头图标）
+                    // Icons are intentionally omitted when charging or plugged in
+                    // 当充电或接通电源时故意省略图标
                 }
+            }
 
-                // ── Charging: lightning bolt ──
-                if (root.isCharging) {
-                    var cx = bodyX + bodyW * 0.5;
-                    var cy = h * 0.5;
-                    var bh = bodyH * 0.5;
-                    var bw = bh * 0.4;
-
-                    ctx.beginPath();
-                    ctx.moveTo(cx + bw * 0.05, cy - bh * 0.5);
-                    ctx.lineTo(cx - bw * 0.4,  cy + bh * 0.05);
-                    ctx.lineTo(cx + bw * 0.05, cy + bh * 0.05);
-                    ctx.lineTo(cx - bw * 0.05, cy + bh * 0.5);
-                    ctx.lineTo(cx + bw * 0.4,  cy - bh * 0.05);
-                    ctx.lineTo(cx - bw * 0.05, cy - bh * 0.05);
-                    ctx.closePath();
-                    ctx.fillStyle = Kirigami.Theme.backgroundColor.toString();
-                    ctx.fill();
-                    ctx.strokeStyle = Kirigami.Theme.textColor.toString();
-                    ctx.lineWidth = Math.max(0.5, w * 0.03);
-                    ctx.stroke();
-                }
-                // ── Plugged in (not charging): plug icon ──
-                else if (root.acPlugged) {
-                    var px = bodyX + bodyW * 0.5;
-                    var py = h * 0.5;
-                    var ps = Math.max(3, bodyH * 0.12);
-
-                    ctx.beginPath();
-                    ctx.roundedRect(px - ps, py - ps * 0.6, ps * 2, ps * 1.2, 1, 1);
-                    ctx.fillStyle = Kirigami.Theme.backgroundColor.toString();
-                    ctx.fill();
-                    ctx.strokeStyle = Kirigami.Theme.textColor.toString();
-                    ctx.lineWidth = Math.max(0.8, w * 0.04);
-                    ctx.stroke();
-
-                    var prongW = Math.max(1, ps * 0.25);
-                    ctx.fillStyle = Kirigami.Theme.textColor.toString();
-                    ctx.fillRect(px - ps * 0.45, py - ps * 0.6 - ps * 0.5, prongW, ps * 0.5);
-                    ctx.fillRect(px + ps * 0.2,  py - ps * 0.6 - ps * 0.5, prongW, ps * 0.5);
-                }
+            // Battery percentage label / 电池百分比标签
+            PlasmaComponents.Label {
+                id: percentageLabel
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                visible: root.showBatteryPercentage  // Show/hide based on configuration / 根据配置显示/隐藏
+                verticalAlignment: Text.AlignVCenter
+                horizontalAlignment: Text.AlignLeft
+                text: root.currentBattery >= 0 ? Math.round(root.currentBattery) + "%" : "N/A"
+                font.pixelSize: Math.max(8, parent.height * 0.45)
+                font.bold: true
+                color: root.isCharging ? root.colorCharging : 
+                       (root.currentBattery <= 20 ? root.colorBatteryLow : 
+                       (root.currentBattery <= 30 ? root.colorBatteryMid : Kirigami.Theme.textColor))
             }
         }
 
