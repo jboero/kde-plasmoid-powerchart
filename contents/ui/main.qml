@@ -260,7 +260,7 @@ PlasmoidItem {
     // ── Compact representation (vertical battery icon for systray) ──
     compactRepresentation: Item {
         id: compactRoot
-        Layout.minimumWidth: Kirigami.Units.iconSizes.medium + 20
+        Layout.minimumWidth: batteryIcon.Layout.preferredWidth + (root.showBatteryPercentage ? percentageLabel.Layout.preferredWidth + 4 : 0)  // Dynamic width based on content / 基于内容的动态宽度
         Layout.minimumHeight: Kirigami.Units.iconSizes.medium
         Layout.preferredWidth: Layout.minimumWidth
         Layout.preferredHeight: Layout.minimumHeight
@@ -364,7 +364,7 @@ PlasmoidItem {
             // Battery percentage label / 电池百分比标签
             PlasmaComponents.Label {
                 id: percentageLabel
-                Layout.fillWidth: true
+                Layout.preferredWidth: implicitWidth   // Use actual text width instead of fillWidth / 使用实际文本宽度而非填充宽度
                 Layout.fillHeight: true
                 visible: root.showBatteryPercentage  // Show/hide based on configuration / 根据配置显示/隐藏
                 verticalAlignment: Text.AlignVCenter
