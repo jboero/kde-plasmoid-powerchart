@@ -292,22 +292,24 @@ PlasmoidItem {
                     var lw = Math.max(1, Math.round(Math.min(w, h) * 0.04));
 
                     // ── Horizontal battery body (nub on right) ──
-                    var nubW = Math.max(2, w * 0.06);
-                    var nubH = h * 0.3;
-                    var nubX = w * 0.88;
-                    var nubY = (h - nubH) / 2;
+                    // Main body dimensions / 主体尺寸
+                    var bodyX = w * 0.06;                    // Body X position: 6% from left for proper spacing / 主体 X 位置：距左侧 6% 以获得适当间距
+                    var bodyY = h * 0.25;                    // Body Y position: 25% from top for vertical centering / 主体 Y 位置：距顶部 25% 以垂直居中
+                    var bodyW = w * 0.82;                    // Body width: 82% of canvas width / 主体宽度：画布宽度的 82%
+                    var bodyH = h * 0.5;                     // Body height: 50% of canvas height / 主体高度：画布高度的 50%
+                    var r = Math.max(2, bodyH * 0.25);       // Corner radius: 25% of body height (large rounded corners per design spec) / 圆角半径：主体高度的 25%（大圆角设计）
 
+                    // Positive electrode (nub) - small and delicate on the right side / 正电极 - 右侧小巧精致
+                    var nubW = Math.max(2, w * 0.045);       // Nub width: ~4.5% of canvas width (small and delicate) / 正极宽度：画布宽度的约 4.5%（小巧精致）
+                    var nubH = h * 0.2;                      // Nub height: 20% of canvas height (smaller for better proportion) / 正极高度：画布高度的 20%（更小以获得更好的比例）
+                    var nubX = bodyX + bodyW;                // Nub X position: immediately after battery body / 正极 X 位置：紧接电池主体之后
+                    var nubY = (h - nubH) / 2;               // Nub Y position: vertically centered / 正极 Y 位置：垂直居中
+
+                    // Draw positive electrode first (behind battery body) / 先绘制正电极（在电池主体后面）
                     ctx.beginPath();
                     ctx.roundedRect(nubX, nubY, nubW, nubH, 1, 1);
                     ctx.fillStyle = Kirigami.Theme.textColor.toString();
                     ctx.fill();
-
-                    // Main body / 电池主体
-                    var bodyX = w * 0.06;                    // Body X position: 6% from left / 主体 X 位置：距左侧 6%
-                    var bodyY = h * 0.25;                    // Body Y position: 20% from top for vertical centering / 主体 Y 位置：距顶部 20% 以垂直居中
-                    var bodyW = w * 0.82;                    // Body width: 82% of canvas width / 主体宽度：画布宽度的 82%
-                    var bodyH = h * 0.5;                     // Body height: 60% of canvas height (adjusted for better proportion) / 主体高度：画布高度的 60%（调整以获得更好的比例）
-                    var r = Math.max(2, bodyH * 0.15);       // Corner radius: 15% of body height, minimum 2px / 圆角半径：主体高度的 15%，最小 2 像素
 
                     // Determine border color (always white/text color) / 确定边框颜色（始终为白色/文本颜色）
                     var borderColor = Kirigami.Theme.textColor.toString();
