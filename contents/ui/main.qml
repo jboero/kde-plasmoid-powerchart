@@ -27,6 +27,7 @@ PlasmoidItem {
     readonly property color colorBatteryMid: Kirigami.Theme.neutralTextColor
     readonly property color colorPower:      Kirigami.Theme.highlightColor
     readonly property color colorCharging:   Kirigami.Theme.positiveTextColor
+    readonly property color colorPluggedAC:  "#4a90e2"  // blue for AC plugged but not charging / 蓝色表示接通电源但未充电
     readonly property color colorTemp:       "#ff8844"  // warm orange for temperature
     readonly property color colorText:       Kirigami.Theme.disabledTextColor
     readonly property color colorTextBright: Kirigami.Theme.textColor
@@ -317,9 +318,12 @@ PlasmoidItem {
                     // Determine fill color based on battery level and charging state / 根据电量和充电状态确定填充颜色
                     var fillColor;
                     
-                    if (root.isCharging || root.acPlugged) {
-                        // Charging or plugged in: green fill / 充电或接通电源：绿色填充
+                    if (root.isCharging) {
+                        // Charging: green fill / 充电中：绿色填充
                         fillColor = root.colorCharging;
+                    } else if (root.acPlugged) {
+                        // AC plugged but not charging: blue fill / 接通电源但未充电：蓝色填充
+                        fillColor = root.colorPluggedAC;
                     } else if (pct <= 20) {
                         // Below 20%: red fill / 20% 以下：红色填充
                         fillColor = root.colorBatteryLow;
@@ -374,9 +378,7 @@ PlasmoidItem {
                 text: root.currentBattery >= 0 ? Math.round(root.currentBattery) + "%" : "N/A"
                 font.pixelSize: Math.max(8, parent.height * 0.45)
                 font.bold: true
-                color: root.isCharging ? root.colorCharging : 
-                       (root.currentBattery <= 20 ? root.colorBatteryLow : 
-                       (root.currentBattery <= 30 ? root.colorBatteryMid : Kirigami.Theme.textColor))
+                color: Kirigami.Theme.textColor  // Always use fixed text color, never changes / 始终使用固定文本颜色，永不改变
             }
         }
 
