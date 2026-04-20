@@ -27,6 +27,7 @@ PlasmoidItem {
     readonly property color colorBatteryMid: Kirigami.Theme.neutralTextColor
     readonly property color colorPower:      Kirigami.Theme.highlightColor
     readonly property color colorCharging:   Kirigami.Theme.positiveTextColor
+    readonly property color colorPluggedAC:  "#4a90e2"  // blue for AC plugged but not charging / 蓝色表示接通电源但未充电
     readonly property color colorTemp:       "#ff8844"  // warm orange for temperature
     readonly property color colorText:       Kirigami.Theme.disabledTextColor
     readonly property color colorTextBright: Kirigami.Theme.textColor
@@ -260,7 +261,7 @@ PlasmoidItem {
     // ── Compact representation (vertical battery icon for systray) ──
     compactRepresentation: Item {
         id: compactRoot
-        Layout.minimumWidth: Kirigami.Units.iconSizes.medium + 20
+        Layout.minimumWidth: batteryIcon.Layout.preferredWidth + (root.showBatteryPercentage ? percentageLabel.Layout.preferredWidth + 4 : 0)  // Dynamic width based on content / 基于内容的动态宽度
         Layout.minimumHeight: Kirigami.Units.iconSizes.medium
         Layout.preferredWidth: Layout.minimumWidth
         Layout.preferredHeight: Layout.minimumHeight
@@ -292,22 +293,24 @@ PlasmoidItem {
                     var lw = Math.max(1, Math.round(Math.min(w, h) * 0.04));
 
                     // ── Horizontal battery body (nub on right) ──
-                    var nubW = Math.max(2, w * 0.06);
-                    var nubH = h * 0.3;
-                    var nubX = w * 0.88;
-                    var nubY = (h - nubH) / 2;
+                    // Main body dimensions / 主体尺寸
+                    var bodyX = w * 0.06;                    // Body X position: 6% from left for proper spacing / 主体 X 位置：距左侧 6% 以获得适当间距
+                    var bodyY = h * 0.25;                    // Body Y position: 25% from top for vertical centering / 主体 Y 位置：距顶部 25% 以垂直居中
+                    var bodyW = w * 0.82;                    // Body width: 82% of canvas width / 主体宽度：画布宽度的 82%
+                    var bodyH = h * 0.5;                     // Body height: 50% of canvas height / 主体高度：画布高度的 50%
+                    var r = Math.max(2, bodyH * 0.25);       // Corner radius: 25% of body height (large rounded corners per design spec) / 圆角半径：主体高度的 25%（大圆角设计）
 
+                    // Positive electrode (nub) - small and delicate on the right side / 正电极 - 右侧小巧精致
+                    var nubW = Math.max(2, w * 0.045);       // Nub width: ~4.5% of canvas width (small and delicate) / 正极宽度：画布宽度的约 4.5%（小巧精致）
+                    var nubH = h * 0.2;                      // Nub height: 20% of canvas height (smaller for better proportion) / 正极高度：画布高度的 20%（更小以获得更好的比例）
+                    var nubX = bodyX + bodyW;                // Nub X position: immediately after battery body / 正极 X 位置：紧接电池主体之后
+                    var nubY = (h - nubH) / 2;               // Nub Y position: vertically centered / 正极 Y 位置：垂直居中
+
+                    // Draw positive electrode first (behind battery body) / 先绘制正电极（在电池主体后面）
                     ctx.beginPath();
                     ctx.roundedRect(nubX, nubY, nubW, nubH, 1, 1);
                     ctx.fillStyle = Kirigami.Theme.textColor.toString();
                     ctx.fill();
-
-                    // Main body / 电池主体
-                    var bodyX = w * 0.06;                    // Body X position: 6% from left / 主体 X 位置：距左侧 6%
-                    var bodyY = h * 0.25;                    // Body Y position: 20% from top for vertical centering / 主体 Y 位置：距顶部 20% 以垂直居中
-                    var bodyW = w * 0.82;                    // Body width: 82% of canvas width / 主体宽度：画布宽度的 82%
-                    var bodyH = h * 0.5;                     // Body height: 60% of canvas height (adjusted for better proportion) / 主体高度：画布高度的 60%（调整以获得更好的比例）
-                    var r = Math.max(2, bodyH * 0.15);       // Corner radius: 15% of body height, minimum 2px / 圆角半径：主体高度的 15%，最小 2 像素
 
                     // Determine border color (always white/text color) / 确定边框颜色（始终为白色/文本颜色）
                     var borderColor = Kirigami.Theme.textColor.toString();
@@ -315,9 +318,12 @@ PlasmoidItem {
                     // Determine fill color based on battery level and charging state / 根据电量和充电状态确定填充颜色
                     var fillColor;
                     
-                    if (root.isCharging || root.acPlugged) {
-                        // Charging or plugged in: green fill / 充电或接通电源：绿色填充
+                    if (root.isCharging) {
+                        // Charging: green fill / 充电中：绿色填充
                         fillColor = root.colorCharging;
+                    } else if (root.acPlugged) {
+                        // AC plugged but not charging: blue fill / 接通电源但未充电：蓝色填充
+                        fillColor = root.colorPluggedAC;
                     } else if (pct <= 20) {
                         // Below 20%: red fill / 20% 以下：红色填充
                         fillColor = root.colorBatteryLow;
@@ -364,7 +370,7 @@ PlasmoidItem {
             // Battery percentage label / 电池百分比标签
             PlasmaComponents.Label {
                 id: percentageLabel
-                Layout.fillWidth: true
+                Layout.preferredWidth: implicitWidth   // Use actual text width instead of fillWidth / 使用实际文本宽度而非填充宽度
                 Layout.fillHeight: true
                 visible: root.showBatteryPercentage  // Show/hide based on configuration / 根据配置显示/隐藏
                 verticalAlignment: Text.AlignVCenter
@@ -372,9 +378,7 @@ PlasmoidItem {
                 text: root.currentBattery >= 0 ? Math.round(root.currentBattery) + "%" : "N/A"
                 font.pixelSize: Math.max(8, parent.height * 0.45)
                 font.bold: true
-                color: root.isCharging ? root.colorCharging : 
-                       (root.currentBattery <= 20 ? root.colorBatteryLow : 
-                       (root.currentBattery <= 30 ? root.colorBatteryMid : Kirigami.Theme.textColor))
+                color: Kirigami.Theme.textColor  // Always use fixed text color, never changes / 始终使用固定文本颜色，永不改变
             }
         }
 
