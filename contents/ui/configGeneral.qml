@@ -26,6 +26,7 @@ Kirigami.FormLayout {
     property alias cfg_historyMinutes: historySpinBox.value      // History duration in minutes / 历史时长（分钟）
     property alias cfg_showPowerProfile: powerProfileCheck.checked  // Show/hide power profile controls / 显示/隐藏电源配置文件控件
     property alias cfg_showBatteryPercentage: batteryPercentageCheck.checked  // Show/hide battery percentage text / 显示/隐藏电池百分比文本
+    property string cfg_raplSource: "none"  // RAPL system-power source: psys | package | none
 
     // SpinBox for numeric input with increment/decrement buttons
     // 带增减按钮的数值输入 SpinBox
@@ -63,6 +64,29 @@ Kirigami.FormLayout {
         text: i18n("Show battery percentage next to icon")    // Checkbox text / 复选框文本
     }
 
+    // RAPL system-power source selector. PSYS *should* be whole-platform but is
+    // implementation-defined and on some Intel client silicon under-reports
+    // (e.g. reads lower than the CPU package alone). Let the user pick.
+    QQC2.ComboBox {
+        id: raplSourceCombo
+        Kirigami.FormData.label: i18n("System power source:")
+        textRole: "label"
+        valueRole: "value"
+        model: [
+            { value: "psys",    label: i18n("PSYS — whole-platform (preferred)") },
+            { value: "package", label: i18n("Package — CPU + iGPU only") },
+            { value: "none",    label: i18n("None — disable overlay") }
+        ]
+        Component.onCompleted: {
+            var idx = indexOfValue(cfg_raplSource);
+            currentIndex = idx >= 0 ? idx : 0;
+        }
+        onActivated: cfg_raplSource = currentValue
+        QQC2.ToolTip.visible: hovered
+        QQC2.ToolTip.delay: 500
+        QQC2.ToolTip.text: i18n("PSYS is the only true whole-platform reading but its scope is firmware-defined and on some Intel CPUs under-reports (can read lower than the CPU package alone). Package is CPU+iGPU only — accurate for what it covers but excludes display, NICs, etc. If readings look implausible, try the other source or set to None.")
+    }
+
     // Informational note with multi-line text and reduced opacity
     // 带多行文本和降低透明度的信息提示
     QQC2.Label {
@@ -70,5 +94,80 @@ Kirigami.FormLayout {
         text: i18n("Shorter intervals give smoother graphs but use slightly more CPU.\nHistory duration controls how far back the graph shows.\nPower profile switching requires power-profiles-daemon (D-Bus service).")
         wrapMode: Text.WordWrap                                   // Enable word wrapping / 启用自动换行
         opacity: 0.7                                              // Dim the text to indicate it's secondary information / 降低文本透明度以表示次要信息
+    }
+
+    // System-power (RAPL) unlock instructions — energy_uj is root-only on modern
+    // kernels (CVE-2020-8694 mitigation). Conservative hint, no auto-modifications.
+    ColumnLayout {
+        Kirigami.FormData.label: i18n("System power (RAPL):")
+        Layout.fillWidth: true
+        Layout.preferredWidth: 420
+        spacing: Kirigami.Units.smallSpacing
+
+        QQC2.Label {
+            Layout.fillWidth: true
+            text: i18n("If 'System' watts show as locked, RAPL energy counters are root-only on this kernel. Drop a one-time udev rule to allow user reads (persistent, easy to revert):")
+            wrapMode: Text.WordWrap
+            opacity: 0.8
+        }
+
+        // Bordered, selectable command block with a copy button in the corner.
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: raplCmd.implicitHeight + Kirigami.Units.smallSpacing * 2
+            color: Kirigami.Theme.alternateBackgroundColor
+            border.color: Kirigami.Theme.disabledTextColor
+            border.width: 1
+            radius: 4
+
+            TextEdit {
+                id: raplCmd
+                anchors.left: parent.left
+                anchors.right: copyBtn.left
+                anchors.top: parent.top
+                anchors.margins: Kirigami.Units.smallSpacing
+                text: "echo 'SUBSYSTEM==\"powercap\", ACTION==\"add\", RUN+=\"/bin/chmod a+r /sys/%p/energy_uj\"' | sudo tee /etc/udev/rules.d/99-rapl.rules\nsudo udevadm trigger"
+                readOnly: true
+                selectByMouse: true
+                wrapMode: TextEdit.Wrap
+                color: Kirigami.Theme.textColor
+                font.family: "monospace"
+                font.pixelSize: Kirigami.Theme.smallFont.pixelSize
+            }
+
+            QQC2.ToolButton {
+                id: copyBtn
+                anchors.top: parent.top
+                anchors.right: parent.right
+                anchors.margins: 2
+                icon.name: "edit-copy"
+                text: copied ? i18n("Copied") : i18n("Copy")
+                display: QQC2.AbstractButton.IconOnly
+                QQC2.ToolTip.visible: hovered
+                QQC2.ToolTip.text: text
+                property bool copied: false
+                onClicked: {
+                    raplCmd.selectAll();
+                    raplCmd.copy();
+                    raplCmd.deselect();
+                    copied = true;
+                    copiedReset.restart();
+                }
+                Timer {
+                    id: copiedReset
+                    interval: 1500
+                    onTriggered: copyBtn.copied = false
+                }
+            }
+        }
+
+        QQC2.Label {
+            Layout.fillWidth: true
+            text: i18n("Revert: sudo rm /etc/udev/rules.d/99-rapl.rules && sudo udevadm trigger")
+            wrapMode: Text.WordWrap
+            opacity: 0.7
+            font.family: "monospace"
+            font.pixelSize: Kirigami.Theme.smallFont.pixelSize
+        }
     }
 }

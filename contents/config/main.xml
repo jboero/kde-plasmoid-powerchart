@@ -17,5 +17,12 @@
         <entry name="showBatteryPercentage" type="Bool">
             <default>true</default>
         </entry>
+        <!-- RAPL system-power source: "psys" (whole-platform, often incompletely wired on
+             Intel client silicon), "package" (CPU + iGPU only), or "none" (disable the
+             overlay). Defaults to "none" because PSYS scope is firmware-defined and
+             inconsistent across hardware — users opt in once they verify their reading. -->
+        <entry name="raplSource" type="String">
+            <default>none</default>
+        </entry>
     </group>
 </kcfg>
