@@ -37,6 +37,16 @@ for d in /sys/class/power_supply/AC* /sys/class/power_supply/ADP*; do [ -d "$d" 
 # 初始化变量及默认值
 PCT=-1; WATTS=0; CHARGING=false; AC_ON=false; STATUS="Unknown"
 TTE=""; TTF=""; DCAP=0; FCAP=0; CYCLES=-1; TEMP=-1
+HAS_BATTERY=false
+[ -n "$BAT" ] && HAS_BATTERY=true
+
+# RAPL system-power counters. We emit BOTH psys (whole-platform, sometimes
+# incompletely wired on Intel client silicon) and package-N (CPU + iGPU only)
+# so the QML can pick the user-preferred source at display time.
+# energy_uj is root-only on modern kernels (CVE-2020-8694 / PLATYPUS mitigation);
+# we surface a status flag rather than silently failing.
+PSYS_ENERGY=-1; PSYS_MAX=-1; PSYS_STATUS="unavailable"
+PKG_ENERGY=-1;  PKG_MAX=-1;  PKG_STATUS="unavailable"
 
 # Read battery data if a battery device was found
 # 如果找到电池设备则读取电池数据
@@ -161,6 +171,36 @@ if [ -n "$BAT" ]; then
     fi
 fi
 
+# Read both RAPL domains — QML picks which one to display based on user config.
+for d in /sys/class/powercap/intel-rapl:*/; do
+    [ -d "$d" ] || continue
+    n=$(cat "$d/name" 2>/dev/null)
+    case "$n" in
+        psys)
+            if [ -r "$d/energy_uj" ]; then
+                PSYS_ENERGY=$(cat "$d/energy_uj")
+                [ -f "$d/max_energy_range_uj" ] && PSYS_MAX=$(cat "$d/max_energy_range_uj")
+                PSYS_STATUS="ok"
+            else
+                PSYS_STATUS="locked"
+            fi
+            ;;
+        package-*)
+            # Take the first package domain (typically package-0). On dual-socket boxes
+            # we'd ideally sum, but plasmoids overwhelmingly run on single-socket clients.
+            if [ "$PKG_STATUS" != "ok" ]; then
+                if [ -r "$d/energy_uj" ]; then
+                    PKG_ENERGY=$(cat "$d/energy_uj")
+                    [ -f "$d/max_energy_range_uj" ] && PKG_MAX=$(cat "$d/max_energy_range_uj")
+                    PKG_STATUS="ok"
+                else
+                    PKG_STATUS="locked"
+                fi
+            fi
+            ;;
+    esac
+done
+
 # Read AC adapter online status (1 = plugged in, 0 = unplugged)
 # This is a separate check from battery status to detect AC connection independently
 # 读取电源适配器在线状态（1 = 已插入，0 = 未插入）
@@ -204,4 +244,11 @@ fi
 # 将所有收集的数据作为 JSON 对象输出
 # This JSON is parsed by the QML executable DataSource in main.qml
 # 此 JSON 由 main.qml 中的 QML executable DataSource 解析
-echo "{\"battery_pct\": $PCT, \"power_watts\": $WATTS, \"charging\": $CHARGING, \"ac_online\": $AC_ON, \"status\": \"$STATUS\", \"time_to_empty\": \"$TTE\", \"time_to_full\": \"$TTF\", \"design_capacity\": $DCAP, \"full_capacity\": $FCAP, \"cycle_count\": $CYCLES, \"temp_celsius\": $TEMP, \"power_profile\": \"$PPD_PROFILE\", \"profiles_available\": \"$PPD_AVAIL\", \"tuned_profile\": \"$TUNED_PROFILE\", \"tuned_available\": \"$TUNED_AVAIL\"}"
+# Monotonic-ish wall-clock seconds with microseconds — used by QML to compute
+# Δenergy / Δt for a watt reading from the RAPL counter.
+NOW_TS=$(awk 'BEGIN{srand(); printf "%.6f", systime() + (rand()*0)}' 2>/dev/null)
+[ -z "$NOW_TS" ] && NOW_TS=$(date +%s)
+# date with %N (nanoseconds) is GNU-specific but ubiquitous on Linux desktops
+NOW_TS=$(date +%s.%N 2>/dev/null || echo "$NOW_TS")
+
+echo "{\"battery_pct\": $PCT, \"power_watts\": $WATTS, \"charging\": $CHARGING, \"ac_online\": $AC_ON, \"status\": \"$STATUS\", \"time_to_empty\": \"$TTE\", \"time_to_full\": \"$TTF\", \"design_capacity\": $DCAP, \"full_capacity\": $FCAP, \"cycle_count\": $CYCLES, \"temp_celsius\": $TEMP, \"has_battery\": $HAS_BATTERY, \"psys_energy_uj\": $PSYS_ENERGY, \"psys_max_uj\": $PSYS_MAX, \"psys_status\": \"$PSYS_STATUS\", \"pkg_energy_uj\": $PKG_ENERGY, \"pkg_max_uj\": $PKG_MAX, \"pkg_status\": \"$PKG_STATUS\", \"poll_ts\": $NOW_TS, \"power_profile\": \"$PPD_PROFILE\", \"profiles_available\": \"$PPD_AVAIL\", \"tuned_profile\": \"$TUNED_PROFILE\", \"tuned_available\": \"$TUNED_AVAIL\"}"

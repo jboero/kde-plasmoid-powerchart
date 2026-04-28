@@ -44,6 +44,9 @@ PlasmoidItem {
     // ── Data state ───────────────────────────────────────────────────
     property int pollCounter: 0   // counts poll cycles; battery% & temp sample every 10th
     property var batteryHistory: []
+    // powerHistory stores tuples {v, c, p} = {batteryWatts, charging?, systemWatts at sample time}.
+    // Historical points are frozen at the source that was active when sampled — switching
+    // source only affects new samples and the live readouts.
     property var powerHistory: []
     property var tempHistory: []
     property real currentBattery: -1
@@ -51,6 +54,7 @@ PlasmoidItem {
     property real currentTemp: -1       // °C, -1 = unavailable
     property bool isCharging: false
     property bool acPlugged: false
+    property bool hasBattery: true
     property string batteryStatus: "Unknown"
     property real maxPowerSeen: 25.0
     property real maxTempSeen: 60.0     // auto-scales
@@ -60,6 +64,34 @@ PlasmoidItem {
     property real fullCapacity: 0
     property real batteryHealth: 0
     property int cycleCount: -1
+
+    // ── RAPL system-power: PSYS + package, user-selectable ────────────
+    // Both readings are sampled every poll; the user picks which one drives
+    // currentSystemWatts via the raplSource config (psys|package|none).
+    property real lastPsysEnergyUj: -1
+    property real lastPsysTs: -1
+    property real psysMaxUj: -1
+    property real psysWatts: -1            // derived from PSYS deltas; -1 = no reading
+    property string psysStatus: "unavailable"  // "ok" | "locked" | "unavailable"
+
+    property real lastPkgEnergyUj: -1
+    property real lastPkgTs: -1
+    property real pkgMaxUj: -1
+    property real pkgWatts: -1
+    property string pkgStatus: "unavailable"
+
+    // User-selected source label and resolved watts.
+    readonly property string activeRaplSource: plasmoid.configuration.raplSource || "none"
+    readonly property real currentSystemWatts: {
+        if (activeRaplSource === "psys") return psysWatts;
+        if (activeRaplSource === "package") return pkgWatts;
+        return -1;  // "none" → overlay disabled
+    }
+    readonly property string activeRaplStatus: {
+        if (activeRaplSource === "psys") return psysStatus;
+        if (activeRaplSource === "package") return pkgStatus;
+        return "disabled";
+    }
     property int viewMode: 1            // 0 = battery%, 1 = power, 2 = temp
     property string currentProfile: ""   // power-profiles-daemon active profile
     property var availableProfiles: []   // list of available profiles
@@ -74,10 +106,27 @@ PlasmoidItem {
     property int dataVersion: 0
 
     // ── Tooltip & background ─────────────────────────────────────────
-    toolTipMainText: "Battery: " + (currentBattery >= 0 ? Math.round(currentBattery) + "%" : "N/A")
-    toolTipSubText: currentPower.toFixed(1) + "W" +
-        (currentTemp >= 0 ? " · " + currentTemp.toFixed(1) + "°C" : "") +
-        (isCharging ? " ⚡ Charging" : "")
+    toolTipMainText: hasBattery
+        ? "Battery: " + (currentBattery >= 0 ? Math.round(currentBattery) + "%" : "N/A")
+        : (currentSystemWatts >= 0 ? "System: " + currentSystemWatts.toFixed(1) + "W" : "Power Monitor")
+    toolTipSubText: {
+        var lines = [];
+        if (hasBattery) {
+            var w = currentPower.toFixed(1) + "W";
+            if (isCharging) lines.push("⚡ Charging at " + w);
+            else lines.push("Discharging " + w);
+        }
+        if (currentSystemWatts >= 0)
+            lines.push("System: " + currentSystemWatts.toFixed(1) + "W"
+                + (activeRaplSource === "package" ? " (CPU only)" : ""));
+        else if (activeRaplStatus === "locked" && !hasBattery)
+            lines.push("System power locked — see Configure");
+        else if (activeRaplSource === "none")
+            { /* user disabled */ }
+        if (currentTemp >= 0) lines.push(currentTemp.toFixed(1) + "°C");
+        if (currentProfile !== "") lines.push("Profile: " + profileLabel(currentProfile));
+        return lines.join("\n");
+    }
     Plasmoid.backgroundHints: PlasmaCore.Types.DefaultBackground
 
     // ── Shell command ────────────────────────────────────────────────
@@ -107,6 +156,7 @@ PlasmoidItem {
                 root.currentPower = (parsed.power_watts !== undefined) ? parsed.power_watts : 0;
                 root.isCharging = parsed.charging || false;
                 root.acPlugged = parsed.ac_online || false;
+                root.hasBattery = parsed.has_battery !== undefined ? parsed.has_battery : (root.currentBattery >= 0);
                 root.batteryStatus = parsed.status || "Unknown";
                 root.timeToEmpty = parsed.time_to_empty || "";
                 root.timeToFull = parsed.time_to_full || "";
@@ -114,6 +164,39 @@ PlasmoidItem {
                 root.fullCapacity = parsed.full_capacity || 0;
                 root.cycleCount = (parsed.cycle_count !== undefined) ? parsed.cycle_count : -1;
                 root.currentTemp = (parsed.temp_celsius !== undefined) ? parsed.temp_celsius : -1;
+
+                // RAPL — diff μJ against previous sample for watts.
+                // PSYS and package are tracked independently; user config picks which
+                // drives the displayed `currentSystemWatts`.
+                var nowTs = (parsed.poll_ts !== undefined) ? parsed.poll_ts : -1;
+
+                root.psysStatus = parsed.psys_status || "unavailable";
+                root.psysMaxUj = (parsed.psys_max_uj !== undefined) ? parsed.psys_max_uj : -1;
+                var psysE = (parsed.psys_energy_uj !== undefined) ? parsed.psys_energy_uj : -1;
+                if (psysE >= 0 && nowTs > 0 && root.lastPsysEnergyUj >= 0 && root.lastPsysTs > 0) {
+                    var pdt = nowTs - root.lastPsysTs;
+                    var pde = psysE - root.lastPsysEnergyUj;
+                    if (pde < 0 && root.psysMaxUj > 0) pde += root.psysMaxUj;
+                    if (pdt > 0 && pde >= 0) root.psysWatts = pde / pdt / 1000000;
+                } else if (psysE < 0) {
+                    root.psysWatts = -1;
+                }
+                root.lastPsysEnergyUj = psysE;
+                root.lastPsysTs = nowTs;
+
+                root.pkgStatus = parsed.pkg_status || "unavailable";
+                root.pkgMaxUj = (parsed.pkg_max_uj !== undefined) ? parsed.pkg_max_uj : -1;
+                var pkgE = (parsed.pkg_energy_uj !== undefined) ? parsed.pkg_energy_uj : -1;
+                if (pkgE >= 0 && nowTs > 0 && root.lastPkgEnergyUj >= 0 && root.lastPkgTs > 0) {
+                    var kdt = nowTs - root.lastPkgTs;
+                    var kde = pkgE - root.lastPkgEnergyUj;
+                    if (kde < 0 && root.pkgMaxUj > 0) kde += root.pkgMaxUj;
+                    if (kdt > 0 && kde >= 0) root.pkgWatts = kde / kdt / 1000000;
+                } else if (pkgE < 0) {
+                    root.pkgWatts = -1;
+                }
+                root.lastPkgEnergyUj = pkgE;
+                root.lastPkgTs = nowTs;
 
                 // Power profile
                 var pp = parsed.power_profile || "";
@@ -164,9 +247,9 @@ PlasmoidItem {
                     root.batteryHealth = (root.fullCapacity / root.designCapacity) * 100;
                 }
 
-                // Power history: every poll cycle
+                // Power history: every poll cycle, tuple {v, c, p}
                 var ph = root.powerHistory.slice();
-                ph.push(root.currentPower);
+                ph.push({ v: root.currentPower, c: root.isCharging, p: root.currentSystemWatts });
                 if (ph.length > root.maxDataPoints) ph.shift();
                 root.powerHistory = ph;
 
@@ -188,8 +271,10 @@ PlasmoidItem {
                     }
                 }
 
-                if (root.currentPower > root.maxPowerSeen) {
-                    root.maxPowerSeen = Math.ceil(root.currentPower / 5) * 5 + 5;
+                // Auto-scale considers both RAPL sources so switching doesn't clip history.
+                var peak = Math.max(root.currentPower, root.psysWatts, root.pkgWatts);
+                if (peak > root.maxPowerSeen) {
+                    root.maxPowerSeen = Math.ceil(peak / 5) * 5 + 5;
                 }
                 if (root.currentTemp > root.maxTempSeen) {
                     root.maxTempSeen = Math.ceil(root.currentTemp / 10) * 10 + 10;
@@ -222,7 +307,9 @@ PlasmoidItem {
     }
 
     function setProfile(profileName) {
-        // Use powerprofilesctl if available, otherwise gdbus
+        // Defense-in-depth: only accept names from the parsed available list before
+        // building a shell command, so profile strings can't reach the shell unvetted.
+        if (root.availableProfiles.indexOf(profileName) < 0) return;
         profileSetter.connectSource(
             "if command -v powerprofilesctl >/dev/null 2>&1; then " +
             "powerprofilesctl set " + profileName + "; else " +
@@ -245,6 +332,8 @@ PlasmoidItem {
     }
 
     function setTunedProfile(profileName) {
+        // Defense-in-depth: same whitelist pattern as setProfile.
+        if (root.tunedProfileNames.indexOf(profileName) < 0) return;
         tunedSetter.connectSource("tuned-adm profile " + profileName);
     }
 
@@ -261,14 +350,19 @@ PlasmoidItem {
     // ── Compact representation (vertical battery icon for systray) ──
     compactRepresentation: Item {
         id: compactRoot
-        Layout.minimumWidth: batteryIcon.Layout.preferredWidth + (root.showBatteryPercentage ? percentageLabel.Layout.preferredWidth + 4 : 0)  // Dynamic width based on content / 基于内容的动态宽度
+        // Width auto-sizes for two layouts: battery + optional %, or no-battery (profile glyph + watts).
+        Layout.minimumWidth: root.hasBattery
+            ? (batteryIcon.Layout.preferredWidth + (root.showBatteryPercentage ? percentageLabel.Layout.preferredWidth + 4 : 0))
+            : (noBatteryRow.implicitWidth + 4)
         Layout.minimumHeight: Kirigami.Units.iconSizes.medium
         Layout.preferredWidth: Layout.minimumWidth
         Layout.preferredHeight: Layout.minimumHeight
 
+        // Battery + percentage layout
         RowLayout {
             anchors.fill: parent
             spacing: 2
+            visible: root.hasBattery
 
             // Battery icon canvas / 电池图标画布
             Canvas {
@@ -279,9 +373,11 @@ PlasmoidItem {
                 property real pct: root.currentBattery
                 property bool charging: root.isCharging
                 property bool plugged: root.acPlugged
+                property string profile: root.currentProfile
                 onPctChanged: requestPaint()
                 onChargingChanged: requestPaint()
                 onPluggedChanged: requestPaint()
+                onProfileChanged: requestPaint()
 
                 onPaint: {
                     var ctx = getContext("2d");
@@ -365,6 +461,19 @@ PlasmoidItem {
                     // Icons are intentionally omitted when charging or plugged in
                     // 当充电或接通电源时故意省略图标
                 }
+
+                // Power-profile glyph badge in the bottom-right corner of the battery icon.
+                // Renders only when a profile is active.
+                Text {
+                    visible: root.currentProfile !== ""
+                    text: root.profileGlyph(root.currentProfile)
+                    color: Kirigami.Theme.textColor
+                    font.pixelSize: Math.max(8, parent.height * 0.42)
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    anchors.rightMargin: -1
+                    anchors.bottomMargin: -2
+                }
             }
 
             // Battery percentage label / 电池百分比标签
@@ -379,6 +488,33 @@ PlasmoidItem {
                 font.pixelSize: Math.max(8, parent.height * 0.45)
                 font.bold: true
                 color: Kirigami.Theme.textColor  // Always use fixed text color, never changes / 始终使用固定文本颜色，永不改变
+            }
+        }
+
+        // No-battery layout: profile glyph + system watts (or "—W" when locked).
+        // Replaces the empty-battery icon and "NONE" overflow on desktop/server hardware.
+        RowLayout {
+            id: noBatteryRow
+            anchors.fill: parent
+            spacing: 3
+            visible: !root.hasBattery
+
+            Text {
+                visible: root.currentProfile !== ""
+                text: root.profileGlyph(root.currentProfile)
+                color: Kirigami.Theme.textColor
+                font.pixelSize: Math.max(10, parent.height * 0.6)
+                Layout.alignment: Qt.AlignVCenter
+            }
+            PlasmaComponents.Label {
+                Layout.alignment: Qt.AlignVCenter
+                verticalAlignment: Text.AlignVCenter
+                text: root.currentSystemWatts >= 0
+                    ? root.currentSystemWatts.toFixed(1) + "W"
+                    : (root.psysStatus === "locked" ? "—W" : "")
+                font.pixelSize: Math.max(8, parent.height * 0.45)
+                font.bold: true
+                color: Kirigami.Theme.textColor
             }
         }
 
@@ -419,7 +555,9 @@ PlasmoidItem {
                 Kirigami.Icon {
                     anchors.centerIn: parent
                     width: 22; height: 22
-                    source: root.isCharging ? "battery-charging" : "battery-full"
+                    source: !root.hasBattery
+                        ? "ac-adapter"
+                        : (root.isCharging ? "battery-charging" : "battery-full")
                     color: root.isCharging ? root.colorCharging : root.batteryColor(root.currentBattery)
                 }
             }
@@ -440,32 +578,72 @@ PlasmoidItem {
             Item { Layout.fillWidth: true }
 
             ColumnLayout {
+                id: headlineCol
                 spacing: 0
+                // In Power view, prefer the selected system reading over the battery
+                // wattage so the big number is non-redundant with the sublabel.
+                readonly property bool powerShowsSystem: root.viewMode === 1 && root.currentSystemWatts >= 0
+
                 PlasmaComponents.Label {
                     Layout.alignment: Qt.AlignRight
                     text: root.viewMode === 0
                         ? (root.currentBattery >= 0 ? Math.round(root.currentBattery) + "%" : "N/A")
                         : root.viewMode === 1
-                        ? root.currentPower.toFixed(1) + "W"
+                        ? (headlineCol.powerShowsSystem
+                            ? root.currentSystemWatts.toFixed(1) + "W"
+                            : root.currentPower.toFixed(1) + "W")
                         : (root.currentTemp >= 0 ? root.currentTemp.toFixed(1) + "°C" : "N/A")
                     font.pixelSize: 22
                     font.weight: Font.Bold
                     font.family: "monospace"
                     color: root.viewMode === 0
                         ? root.batteryColor(root.currentBattery)
-                        : root.viewMode === 1 ? root.colorPower : root.tempColor(root.currentTemp)
+                        : root.viewMode === 1
+                        ? (headlineCol.powerShowsSystem ? root.colorTextBright : root.colorPower)
+                        : root.tempColor(root.currentTemp)
                 }
                 PlasmaComponents.Label {
                     Layout.alignment: Qt.AlignRight
                     text: {
-                        if (root.isCharging && root.timeToFull !== "")
-                            return "⚡ Full in " + root.timeToFull;
-                        if (!root.isCharging && root.timeToEmpty !== "")
-                            return "🔋 " + root.timeToEmpty + " remaining";
-                        return root.currentPower.toFixed(1) + "W draw";
+                        var bits = [];
+                        if (root.hasBattery) {
+                            if (root.isCharging) {
+                                bits.push("⚡ " + root.currentPower.toFixed(1) + "W → battery");
+                                if (root.timeToFull !== "") bits.push("full in " + root.timeToFull);
+                            } else {
+                                bits.push(root.currentPower.toFixed(1) + "W load");
+                                if (root.timeToEmpty !== "") bits.push(root.timeToEmpty + " left");
+                            }
+                        } else if (root.currentSystemWatts >= 0) {
+                            // No battery: still want a sublabel to give context to the big number.
+                            bits.push((root.activeRaplSource === "package" ? "CPU package" : "platform") + " power");
+                        }
+                        return bits.join(" · ");
                     }
                     font: Kirigami.Theme.smallFont
                     color: root.colorText
+                }
+
+                // Hover tooltip explaining what the big number represents in each view.
+                HoverHandler { id: headlineHover }
+                QQC2.ToolTip.visible: headlineHover.hovered
+                QQC2.ToolTip.delay: 400
+                QQC2.ToolTip.text: {
+                    if (root.viewMode === 0)
+                        return i18n("Battery charge level (%) from /sys/class/power_supply/BAT*/capacity.");
+                    if (root.viewMode === 2)
+                        return i18n("Battery temperature (°C) from sysfs / thermal zone.");
+                    // Power view
+                    if (headlineCol.powerShowsSystem) {
+                        if (root.activeRaplSource === "psys")
+                            return i18n("System power (RAPL PSYS) — whole-platform reading. Note: PSYS scope is firmware-defined and on some Intel CPUs under-reports. Switch source in Configure if it looks off.");
+                        return i18n("CPU package power (RAPL package-0) — CPU + iGPU only, excludes display, RAM, NIC, etc. Whole-system draw is not measurable on this hardware; battery power_now reflects total when discharging.");
+                    }
+                    if (root.isCharging)
+                        return i18n("Power flowing into the battery (charge rate). Wall draw is higher due to system consumption + charger losses.");
+                    if (root.activeRaplStatus === "locked")
+                        return i18n("Battery load. System (RAPL) power is locked to root on this kernel — see Configure for the unlock recipe.");
+                    return i18n("Battery load — total power being delivered from the cells to the system.");
                 }
             }
         }
@@ -587,55 +765,119 @@ PlasmoidItem {
                         return;
                     }
 
-                    var lineColor = root.viewMode === 0
-                        ? root.batteryColor(root.currentBattery).toString()
-                        : root.viewMode === 1
-                        ? root.colorPower.toString()
-                        : root.tempColor(root.currentTemp).toString();
-                    var cObj = root.viewMode === 0
-                        ? root.batteryColorObj(root.currentBattery)
-                        : root.viewMode === 1
-                        ? (function() { var c = root.colorPower; return { r: c.r, g: c.g, b: c.b }; })()
-                        : root.tempColorObj(root.currentTemp);
+                    // Power mode stores tuples {v, c, p}; battery%/temp are flat numbers.
+                    var isPower = root.viewMode === 1;
+                    var values = new Array(numPoints);
+                    var charging = isPower ? new Array(numPoints) : null;
+                    var psysVals = isPower ? new Array(numPoints) : null;
+                    var hasPsys = false;
+                    for (i = 0; i < numPoints; i++) {
+                        if (isPower) {
+                            values[i] = data[i].v;
+                            charging[i] = data[i].c;
+                            psysVals[i] = data[i].p;
+                            if (psysVals[i] >= 0) hasPsys = true;
+                        } else {
+                            values[i] = data[i];
+                        }
+                    }
 
-                    // Area gradient
+                    // Pick the headline (current-state) color for area/dot.
+                    var lineColor, cObj;
+                    if (root.viewMode === 0) {
+                        lineColor = root.batteryColor(root.currentBattery).toString();
+                        cObj = root.batteryColorObj(root.currentBattery);
+                    } else if (isPower) {
+                        // Charging → green (matches battery icon); discharging → highlight.
+                        var primary = root.isCharging ? root.colorCharging : root.colorPower;
+                        lineColor = primary.toString();
+                        cObj = { r: primary.r, g: primary.g, b: primary.b };
+                    } else {
+                        lineColor = root.tempColor(root.currentTemp).toString();
+                        cObj = root.tempColorObj(root.currentTemp);
+                    }
+
+                    // Area gradient (uses current-state color)
                     var gradient = ctx.createLinearGradient(0, pad.top, 0, pad.top + gh);
                     gradient.addColorStop(0, Qt.rgba(cObj.r, cObj.g, cObj.b, 0.3));
                     gradient.addColorStop(1, Qt.rgba(cObj.r, cObj.g, cObj.b, 0.02));
 
+                    function px(i) { return pad.left + (i / (maxPts - 1)) * gw; }
+                    function py(v) {
+                        var clamped = Math.max(minVal, Math.min(maxVal, v));
+                        return pad.top + gh - ((clamped - minVal) / (maxVal - minVal)) * gh;
+                    }
+
                     // Area
                     ctx.beginPath();
                     for (i = 0; i < numPoints; i++) {
-                        x = pad.left + (i / (maxPts - 1)) * gw;
-                        val = Math.max(minVal, Math.min(maxVal, data[i]));
-                        y = pad.top + gh - ((val - minVal) / (maxVal - minVal)) * gh;
+                        x = px(i); y = py(values[i]);
                         if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
                     }
-                    var lastX = pad.left + ((numPoints - 1) / (maxPts - 1)) * gw;
+                    var lastX = px(numPoints - 1);
                     ctx.lineTo(lastX, pad.top + gh);
                     ctx.lineTo(pad.left, pad.top + gh);
                     ctx.closePath();
                     ctx.fillStyle = gradient;
                     ctx.fill();
 
-                    // Line
-                    ctx.beginPath();
-                    for (i = 0; i < numPoints; i++) {
-                        x = pad.left + (i / (maxPts - 1)) * gw;
-                        val = Math.max(minVal, Math.min(maxVal, data[i]));
-                        y = pad.top + gh - ((val - minVal) / (maxVal - minVal)) * gh;
-                        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                    // Line — segmented in power mode by charging state, single-color elsewhere.
+                    // Drawn before the PSYS overlay so the system line sits on top.
+                    ctx.lineWidth = 1.5;
+                    if (isPower) {
+                        var dischargeColor = root.colorPower.toString();
+                        var chargeColor = root.colorCharging.toString();
+                        // Walk runs of identical charging state and stroke each as one path.
+                        var runStart = 0;
+                        for (i = 1; i <= numPoints; i++) {
+                            if (i === numPoints || charging[i] !== charging[runStart]) {
+                                ctx.beginPath();
+                                // Anchor segment to the previous run's last point so there's no gap.
+                                var startIdx = runStart === 0 ? 0 : runStart - 1;
+                                ctx.moveTo(px(startIdx), py(values[startIdx]));
+                                for (var j = runStart; j < i; j++) {
+                                    ctx.lineTo(px(j), py(values[j]));
+                                }
+                                ctx.strokeStyle = charging[runStart] ? chargeColor : dischargeColor;
+                                ctx.stroke();
+                                runStart = i;
+                            }
+                        }
+                    } else {
+                        ctx.beginPath();
+                        for (i = 0; i < numPoints; i++) {
+                            x = px(i); y = py(values[i]);
+                            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                        }
+                        ctx.strokeStyle = lineColor;
+                        ctx.stroke();
                     }
-                    ctx.strokeStyle = lineColor;
-                    ctx.lineWidth = 2;
-                    ctx.stroke();
 
-                    // Dot
+                    // PSYS overlay (system power) — solid translucent line on top of the
+                    // battery line so the underlying color shows through where they overlap.
+                    if (isPower && hasPsys) {
+                        ctx.save();
+                        ctx.beginPath();
+                        var psysStarted = false;
+                        for (i = 0; i < numPoints; i++) {
+                            if (psysVals[i] < 0) { psysStarted = false; continue; }
+                            x = px(i); y = py(psysVals[i]);
+                            if (!psysStarted) { ctx.moveTo(x, y); psysStarted = true; }
+                            else ctx.lineTo(x, y);
+                        }
+                        ctx.strokeStyle = Qt.rgba(
+                            Kirigami.Theme.textColor.r,
+                            Kirigami.Theme.textColor.g,
+                            Kirigami.Theme.textColor.b, 0.65).toString();
+                        ctx.lineWidth = 1.5;
+                        ctx.stroke();
+                        ctx.restore();
+                    }
+
+                    // Dot — color reflects current state (charging vs discharging in power mode).
                     if (numPoints > 0) {
-                        var lastVal = data[numPoints - 1];
-                        var dotX = pad.left + ((numPoints - 1) / (maxPts - 1)) * gw;
-                        var dotY = pad.top + gh - ((Math.max(minVal, Math.min(maxVal, lastVal)) - minVal) / (maxVal - minVal)) * gh;
-
+                        var dotX = px(numPoints - 1);
+                        var dotY = py(values[numPoints - 1]);
                         ctx.beginPath();
                         ctx.arc(dotX, dotY, 6, 0, 2 * Math.PI);
                         ctx.fillStyle = Qt.rgba(cObj.r, cObj.g, cObj.b, 0.25);
@@ -647,6 +889,28 @@ PlasmoidItem {
                     }
                 }
             }
+        }
+
+        // Mini legend for the power graph — shown only when PSYS overlay is visible.
+        // Disambiguates the solid (battery/state-colored) line from the dashed system line.
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Kirigami.Units.largeSpacing
+            visible: root.viewMode === 1 && root.currentSystemWatts >= 0 && fullRep.showStats
+
+            Item { Layout.fillWidth: true }
+            PlasmaComponents.Label {
+                text: (root.isCharging ? "━ → battery" : "━ load")
+                font: Kirigami.Theme.smallFont
+                color: root.isCharging ? root.colorCharging : root.colorPower
+            }
+            PlasmaComponents.Label {
+                text: "━ " + (root.activeRaplSource === "package" ? "CPU package" : "system")
+                font: Kirigami.Theme.smallFont
+                color: root.colorTextBright
+                opacity: 0.65
+            }
+            Item { Layout.fillWidth: true }
         }
 
         // ── Power Profile Switcher ───────────────────────────────────
@@ -812,6 +1076,19 @@ PlasmoidItem {
     }
 
     // ── Helpers ──────────────────────────────────────────────────────
+    function profileLabel(p) {
+        if (p === "power-saver") return "Saver";
+        if (p === "balanced") return "Balanced";
+        if (p === "performance") return "Performance";
+        return p;
+    }
+    function profileGlyph(p) {
+        if (p === "power-saver") return "🔋";
+        if (p === "balanced") return "⚖";
+        if (p === "performance") return "🚀";
+        return "";
+    }
+
     function batteryColor(pct) {
         if (pct < 0) return root.colorText;
         if (pct <= 20) return root.colorBatteryLow;
