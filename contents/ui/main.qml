@@ -931,9 +931,12 @@ PlasmoidItem {
                     Layout.fillWidth: true
                     text: {
                         var label = modelData;
-                        if (label === "power-saver") return "🔋 Saver";
-                        if (label === "balanced") return "⚖️ Balanced";
-                        if (label === "performance") return "🚀 Performance";
+                        // Power Saver mode - use leaf symbol for energy saving / 节能模式 - 使用叶子符号表示节能
+                        if (label === "power-saver") return "☘ Saver";
+                        // Balanced mode - use scales symbol for balance / 平衡模式 - 使用天平符号表示平衡
+                        if (label === "balanced") return "⚖ Balanced";
+                        // Performance mode - use lightning bolt for high performance / 性能模式 - 使用闪电符号表示高性能
+                        if (label === "performance") return "⚡ Performance";
                         return label;
                     }
                     checked: root.currentProfile === modelData
@@ -1083,9 +1086,12 @@ PlasmoidItem {
         return p;
     }
     function profileGlyph(p) {
-        if (p === "power-saver") return "🔋";
-        if (p === "balanced") return "⚖";
-        if (p === "performance") return "🚀";
+        // Power Saver mode - use leaf symbol for energy saving / 节能模式 - 使用叶子符号表示节能
+        if (p === "power-saver") return "☘";      // U+2618 SHAMROCK - power saving indicator
+        // Balanced mode - use scales symbol for balance / 平衡模式 - 使用天平符号表示平衡
+        if (p === "balanced") return "⚖";          // U+2696 SCALES - balanced/neutral
+        // Performance mode - use lightning bolt for high performance / 性能模式 - 使用闪电符号表示高性能
+        if (p === "performance") return "⚡";       // U+26A1 HIGH VOLTAGE SIGN - performance boost
         return "";
     }
 
