@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.1 (2026-04-29)
+
+### Compact-representation layout fix
+- Compact systray icon is now strictly square, matching the slot Plasma allocates. The previous layout placed the percentage label as a sibling of the icon in a RowLayout, which expanded horizontally and either overlapped neighbouring tray icons or got clipped by the panel edge.
+- When the percentage is enabled, it now renders as a small centered overlay on top of the battery body (KDE-standard style) with a subtle theme-aware outline so it stays legible against any fill color.
+- `showBatteryPercentage` default flipped to `false` — the tooltip already shows the precise reading on hover, and overlays are off-by-default to keep the icon clean.
+- No-battery compact view also re-laid as a square: profile glyph centered, with an optional watts line stacked below when the percentage toggle is on. Replaces the previous horizontal row that had the same overflow problem on batteryless hosts.
+
+---
+
 ## 1.4.0 (2026-04-28)
 
 ### No-battery support / 无电池支持

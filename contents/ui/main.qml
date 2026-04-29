@@ -347,28 +347,26 @@ PlasmoidItem {
         onTriggered: root.execCommand()
     }
 
-    // ── Compact representation (vertical battery icon for systray) ──
+    // ── Compact representation (square systray icon) ──
+    // Strictly square: width = height. Percentage, when enabled, renders as a
+    // centered overlay on the battery body (KDE-standard style) instead of as
+    // a sibling label that would expand the icon's slot horizontally.
     compactRepresentation: Item {
         id: compactRoot
-        // Width auto-sizes for two layouts: battery + optional %, or no-battery (profile glyph + watts).
-        Layout.minimumWidth: root.hasBattery
-            ? (batteryIcon.Layout.preferredWidth + (root.showBatteryPercentage ? percentageLabel.Layout.preferredWidth + 4 : 0))
-            : (noBatteryRow.implicitWidth + 4)
         Layout.minimumHeight: Kirigami.Units.iconSizes.medium
-        Layout.preferredWidth: Layout.minimumWidth
+        Layout.minimumWidth: Layout.minimumHeight
         Layout.preferredHeight: Layout.minimumHeight
+        Layout.preferredWidth: Layout.minimumHeight
 
-        // Battery + percentage layout
-        RowLayout {
+        // Battery icon canvas — fills the whole compact item.
+        Item {
+            id: batteryIcon
             anchors.fill: parent
-            spacing: 2
             visible: root.hasBattery
 
-            // Battery icon canvas / 电池图标画布
             Canvas {
-                id: batteryIcon
-                Layout.preferredWidth: height
-                Layout.preferredHeight: parent.height
+                id: batteryCanvas
+                anchors.fill: parent
 
                 property real pct: root.currentBattery
                 property bool charging: root.isCharging
@@ -476,45 +474,46 @@ PlasmoidItem {
                 }
             }
 
-            // Battery percentage label / 电池百分比标签
-            PlasmaComponents.Label {
-                id: percentageLabel
-                Layout.preferredWidth: implicitWidth   // Use actual text width instead of fillWidth / 使用实际文本宽度而非填充宽度
-                Layout.fillHeight: true
-                visible: root.showBatteryPercentage  // Show/hide based on configuration / 根据配置显示/隐藏
-                verticalAlignment: Text.AlignVCenter
-                horizontalAlignment: Text.AlignLeft
-                text: root.currentBattery >= 0 ? Math.round(root.currentBattery) + "%" : "N/A"
-                font.pixelSize: Math.max(8, parent.height * 0.45)
+            // Optional centered percentage overlay on the battery body (KDE-standard
+            // style). Off by default — the tooltip already shows the precise reading,
+            // and a sibling label would expand the systray slot horizontally.
+            Text {
+                anchors.centerIn: parent
+                visible: root.showBatteryPercentage && root.currentBattery >= 0
+                text: Math.round(root.currentBattery)
+                color: Kirigami.Theme.textColor
+                font.pixelSize: Math.max(7, Math.round(parent.height * 0.36))
                 font.bold: true
-                color: Kirigami.Theme.textColor  // Always use fixed text color, never changes / 始终使用固定文本颜色，永不改变
+                // Subtle outline so the digit reads on top of any fill color.
+                style: Text.Outline
+                styleColor: Kirigami.Theme.backgroundColor
             }
         }
 
-        // No-battery layout: profile glyph + system watts (or "—W" when locked).
-        // Replaces the empty-battery icon and "NONE" overflow on desktop/server hardware.
-        RowLayout {
-            id: noBatteryRow
-            anchors.fill: parent
-            spacing: 3
+        // No-battery layout: profile glyph centered, with an optional watts line below
+        // when showBatteryPercentage is enabled. Stacked vertically to keep the systray
+        // slot square instead of expanding horizontally.
+        Column {
+            id: noBatteryStack
+            anchors.centerIn: parent
             visible: !root.hasBattery
+            spacing: 0
 
             Text {
+                anchors.horizontalCenter: parent.horizontalCenter
                 visible: root.currentProfile !== ""
                 text: root.profileGlyph(root.currentProfile)
                 color: Kirigami.Theme.textColor
-                font.pixelSize: Math.max(10, parent.height * 0.6)
-                Layout.alignment: Qt.AlignVCenter
+                font.pixelSize: Math.max(10, Math.round(compactRoot.height
+                    * (root.showBatteryPercentage ? 0.5 : 0.7)))
             }
-            PlasmaComponents.Label {
-                Layout.alignment: Qt.AlignVCenter
-                verticalAlignment: Text.AlignVCenter
-                text: root.currentSystemWatts >= 0
-                    ? root.currentSystemWatts.toFixed(1) + "W"
-                    : (root.psysStatus === "locked" ? "—W" : "")
-                font.pixelSize: Math.max(8, parent.height * 0.45)
-                font.bold: true
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                visible: root.showBatteryPercentage && root.currentSystemWatts >= 0
+                text: Math.round(root.currentSystemWatts) + "W"
                 color: Kirigami.Theme.textColor
+                font.pixelSize: Math.max(7, Math.round(compactRoot.height * 0.32))
+                font.bold: true
             }
         }
 

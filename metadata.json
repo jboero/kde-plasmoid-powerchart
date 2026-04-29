@@ -13,7 +13,7 @@
         ],
         "Category": "System Information",
         "License": "MPL-2.0",
-        "Version": "1.4.0"
+        "Version": "1.4.1"
     },
     "KPackageStructure": "Plasma/Applet",
     "X-Plasma-API-Minimum-Version": "6.0",
