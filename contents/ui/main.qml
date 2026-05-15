@@ -359,7 +359,7 @@ PlasmoidItem {
         id: compactRoot
         Layout.minimumHeight: Kirigami.Units.iconSizes.medium
         // Width depends on percentage display mode / 宽度取决于百分比显示模式
-        Layout.minimumWidth: root.showBatteryPercentageAfter ? (Layout.minimumHeight * 1.6) : Layout.minimumHeight
+        Layout.minimumWidth: root.showBatteryPercentageAfter ? (Layout.minimumHeight * 1.8) : Layout.minimumHeight
         Layout.preferredHeight: Layout.minimumHeight
         Layout.preferredWidth: Layout.minimumWidth
 
@@ -367,7 +367,7 @@ PlasmoidItem {
         // 使用 RowLayout 水平排列电池图标和百分比文字
         RowLayout {
             anchors.fill: parent
-            spacing: 2  // Small gap between battery and percentage text / 电池和百分比文字之间的小间隙
+            spacing: 3  // Small gap between battery and percentage text / 电池和百分比文字之间的小间隙
 
             // Battery icon container - fixed square size
             // 电池图标容器 - 固定正方形尺寸
@@ -404,8 +404,8 @@ PlasmoidItem {
                         // Main body dimensions / 主体尺寸
                         var bodyX = w * 0.06;                    // Body X position: 6% from left for proper spacing / 主体 X 位置：距左侧 6% 以获得适当间距
                         var bodyY = h * 0.25;                    // Body Y position: 25% from top for vertical centering / 主体 Y 位置：距顶部 25% 以垂直居中
-                        var bodyW = w * 0.82;                    // Body width: 82% of canvas width / 主体宽度：画布宽度的 82%
-                        var bodyH = h * 0.5;                     // Body height: 50% of canvas height / 主体高度：画布高度的 50%
+                        var bodyW = w * 0.85;                    // Body width: 82% of canvas width / 主体宽度：画布宽度的 82%
+                        var bodyH = h * 0.45;                     // Body height: 50% of canvas height / 主体高度：画布高度的 50%
                         var r = Math.max(2, bodyH * 0.25);       // Corner radius: 25% of body height (large rounded corners per design spec) / 圆角半径：主体高度的 25%（大圆角设计）
 
                         // Positive electrode (nub) - small and delicate on the right side / 正电极 - 右侧小巧精致
