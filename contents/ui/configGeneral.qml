@@ -25,7 +25,7 @@ Kirigami.FormLayout {
     property alias cfg_refreshInterval: refreshSpinBox.value     // Refresh interval in seconds / 刷新间隔（秒）
     property alias cfg_historyMinutes: historySpinBox.value      // History duration in minutes / 历史时长（分钟）
     property alias cfg_showPowerProfile: powerProfileCheck.checked  // Show/hide power profile controls / 显示/隐藏电源配置文件控件
-    property alias cfg_showBatteryPercentage: batteryPercentageCheck.checked  // Show/hide battery percentage text / 显示/隐藏电池百分比文本
+    property int cfg_showBatteryPercentage                       // Battery percentage display position / 电池百分比显示位置
     property string cfg_raplSource: "none"  // RAPL system-power source: psys | package | none
 
     // SpinBox for numeric input with increment/decrement buttons
@@ -56,12 +56,24 @@ Kirigami.FormLayout {
         text: i18n("Show power profile switcher in widget")       // Checkbox text / 复选框文本
     }
 
-    // CheckBox to toggle battery percentage display in compact representation
-    // 用于切换紧凑模式下电池百分比显示的复选框
-    QQC2.CheckBox {
-        id: batteryPercentageCheck
-        Kirigami.FormData.label: i18n("Battery percentage:")  // Label for the checkbox / 复选框的标签
-        text: i18n("Show battery percentage next to icon")    // Checkbox text / 复选框文本
+    // ComboBox to select battery percentage display position
+    // 用于选择电池百分比显示位置的下拉框
+    QQC2.ComboBox {
+        id: batteryPercentageCombo
+        Kirigami.FormData.label: i18n("Battery percentage:")  // Label for the combo box / 下拉框的标签
+        textRole: "label"
+        valueRole: "value"
+        model: [
+            { value: 0, label: i18n("Hidden") },              // Hidden / 隐藏
+            { value: 1, label: i18n("After battery icon") },   // After battery icon / 电池图标后面
+            { value: 2, label: i18n("Inside battery icon") }   // Inside battery icon / 电池图标内部
+        ]
+        Component.onCompleted: {
+            var idx = indexOfValue(cfg_showBatteryPercentage);
+            currentIndex = idx >= 0 ? idx : 0;
+        }
+        // Update config when selection changes / 当选择改变时更新配置
+        onActivated: cfg_showBatteryPercentage = currentValue
     }
 
     // RAPL system-power source selector. PSYS *should* be whole-platform but is

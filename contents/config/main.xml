@@ -14,8 +14,16 @@
         <entry name="showPowerProfile" type="Bool">
             <default>true</default>
         </entry>
-        <entry name="showBatteryPercentage" type="Bool">
-            <default>false</default>
+        <entry name="showBatteryPercentage" type="Enum">
+            <default>0</default>
+            <!-- Battery percentage display position / 电池百分比显示位置 -->
+            <!-- 0 = none (hidden), 1 = after battery icon, 2 = inside battery icon -->
+            <!-- 0 = 无（隐藏）, 1 = 电池图标后面, 2 = 电池图标内部 -->
+            <choices>
+                <choice value="0" name="none"/>
+                <choice value="1" name="after"/>
+                <choice value="2" name="inside"/>
+            </choices>
         </entry>
         <!-- RAPL system-power source: "psys" (whole-platform, often incompletely wired on
              Intel client silicon), "package" (CPU + iGPU only), or "none" (disable the

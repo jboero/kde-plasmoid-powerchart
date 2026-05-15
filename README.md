@@ -95,6 +95,22 @@ Right-click the widget → **Configure...** to adjust:
 | Refresh interval | 1 second | 1–300 seconds | How often to poll sysfs |
 | History duration | 10 minutes | 5–1440 minutes | Rolling window for graphs |
 | Power profile controls | On | On/Off | Show power profile switcher |
+| Battery percentage | Hidden | Hidden / After icon / Inside icon | Where to display battery percentage in system tray |
+
+### Battery Percentage Display Options / 电池百分比显示选项
+
+The widget supports three modes for displaying battery percentage in the system tray icon:
+小部件支持三种在系统托盘图标中显示电池百分比的模式：
+
+- **Hidden** (default) - No percentage shown; hover tooltip displays exact value  
+  **隐藏**（默认）- 不显示百分比；悬停工具提示显示精确值
+- **After battery icon** - Shows "XX%" text label to the right of the battery icon, dynamically expanding the icon width  
+  **电池图标后面** - 在电池图标右侧显示 "XX%" 文本标签，动态扩展图标宽度
+- **Inside battery icon** - Overlays percentage number centered on the battery body (KDE standard style)  
+  **电池图标内部** - 将百分比数字覆盖显示在电池主体中心（KDE 标准样式）
+
+The battery icon itself maintains its fixed dimensions regardless of the display mode. When showing percentage after the icon, the overall component width expands dynamically while keeping the battery size constant.
+无论显示模式如何，电池图标本身都保持固定尺寸。当在图标后显示百分比时，整个组件的宽度会动态扩展，同时保持电池大小不变.
 
 ## Uninstall
 
