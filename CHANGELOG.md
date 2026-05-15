@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.5.0 (2026-05-15)
+
+### Battery percentage display position options / 电池百分比显示位置选项
+- Added configurable battery percentage display position with three modes: Hidden, After battery icon, Inside battery icon
+- When set to "After battery icon", the percentage text label appears to the right of the battery icon with dynamic width expansion
+- The battery icon itself maintains fixed dimensions regardless of display mode; only the overall component width adjusts dynamically
+- Configuration UI changed from checkbox to dropdown selector for better user experience
+- Updated configuration schema in `main.xml` to use Enum type with proper choices
+- All code comments follow bilingual format (Chinese + English) per project specification
+
+**新增可配置的电池百分比显示位置，支持三种模式：隐藏、电池图标后面、电池图标内部**
+- 当设置为"电池图标后面"时，百分比文本标签出现在电池图标右侧，宽度动态扩展
+- 无论显示模式如何，电池图标本身保持固定尺寸；仅整体组件宽度动态调整
+- 配置 UI 从复选框改为下拉选择器，提供更好的用户体验
+- 更新 `main.xml` 中的配置架构，使用带有正确选项的 Enum 类型
+- 所有代码注释遵循项目规范的双语格式（中文 + 英文）
+
+---
+
 ## 1.4.1 (2026-04-29)
 
 ### Compact-representation layout fix
